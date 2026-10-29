@@ -166,8 +166,8 @@ describe('Phase 1 sync foundations', () => {
   it('updates the tracked primary and trashes only its duplicate when configured', async () => {
     const ctx = context();
     ctx.settings.deleteDuplicates = true;
-    const primary = Object.assign(new TFile(), { path: 'Readwise Obsidian/Books/one.md' });
-    const duplicate = Object.assign(new TFile(), { path: 'Readwise Obsidian/Books/one-copy.md' });
+    const primary = Object.assign(new TFile(), { path: 'Readwise Sync/Books/one.md' });
+    const duplicate = Object.assign(new TFile(), { path: 'Readwise Sync/Books/one-copy.md' });
     const trashFile = jest.fn(async () => {});
     ctx.app = {
       vault: { process: jest.fn(async () => {}), cachedRead: jest.fn(async () => 'old content') },
@@ -190,7 +190,7 @@ describe('Phase 1 sync foundations', () => {
 
   it('rejects broken local markers before changing frontmatter', async () => {
     const ctx = context();
-    const primary = Object.assign(new TFile(), { path: 'Readwise Obsidian/Books/one.md' });
+    const primary = Object.assign(new TFile(), { path: 'Readwise Sync/Books/one.md' });
     const processFrontMatter = jest.fn(async () => {});
     ctx.app = {
       vault: { cachedRead: jest.fn(async () => '<!-- readwise-obsidian:local:start -->\nUnclosed') },
@@ -213,10 +213,10 @@ describe('Phase 1 sync foundations', () => {
     const renameFile = jest.fn(async () => {});
     ctx.app = { fileManager: { renameFile } } as unknown as PluginContext['app'];
     jest.mocked(normalizeFilename).mockReturnValue('Clean');
-    const file = { basename: 'Unclean', name: 'Unclean.md', parent: { path: 'Readwise Obsidian/Books' } } as TFile;
+    const file = { basename: 'Unclean', name: 'Unclean.md', parent: { path: 'Readwise Sync/Books' } } as TFile;
 
     expect(await new Controller({} as ReadwiseMirror, ctx).renameReadwiseNote(file)).toBe(true);
-    expect(renameFile).toHaveBeenCalledWith(file, 'Readwise Obsidian/Books/Clean.md');
+    expect(renameFile).toHaveBeenCalledWith(file, 'Readwise Sync/Books/Clean.md');
   });
 
   it('creates the new mirror folder before its category folders', async () => {
@@ -233,6 +233,6 @@ describe('Phase 1 sync foundations', () => {
 
     await writer.createCategoryFolders(new Set(['books']));
 
-    expect(createFolder.mock.calls.map(([path]) => path)).toEqual(['Readwise Obsidian', 'Readwise Obsidian/Books']);
+    expect(createFolder.mock.calls.map(([path]) => path)).toEqual(['Readwise Sync', 'Readwise Sync/Books']);
   });
 });

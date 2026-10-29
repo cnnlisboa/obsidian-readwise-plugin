@@ -6,7 +6,7 @@ import { getPluginCommands } from '../utils/plugin-commands';
 import type { Controller } from './controller';
 
 /**
- * Manages command registration for Readwise Obsidian
+ * Manages command registration for Readwise Sync
  */
 export class CommandManager {
   constructor(
@@ -25,7 +25,7 @@ export class CommandManager {
    * Register all plugin commands from the manifest
    */
   private registerCommands(): void {
-    const commands = getPluginCommands(this.ctr, this.ctx);
+    const commands = getPluginCommands(this.ctr, this.ctx, this.plugin);
     for (const cmd of commands) {
       this.plugin.addCommand(cmd);
     }

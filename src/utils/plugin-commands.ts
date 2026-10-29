@@ -2,6 +2,7 @@ import type { Command } from 'obsidian';
 import spacetime from 'spacetime';
 import { Controller } from '../services/controller';
 import type { PluginContext } from '../types/plugin-context';
+import type ReadwiseMirror from 'main';
 import { humanReadableFormat } from './format-utils';
 
 function toErrorMessage(err: unknown): string {
@@ -24,8 +25,21 @@ function toErrorMessage(err: unknown): string {
  * @param ctx PluginContext instance
  * @returns Array of Obsidian Command objects
  */
-export function getPluginCommands(ctr: Controller, ctx: PluginContext): Command[] {
+export function getPluginCommands(ctr: Controller, ctx: PluginContext, plugin: ReadwiseMirror): Command[] {
   return [
+    {
+      id: 'sync-reader-documents',
+      name: 'Sync tagged Reader documents',
+      callback: async () => {
+        try {
+          const report = await plugin.syncReaderDocuments();
+          ctx.notice(`Reader: ${report.counts.created} created, ${report.counts.updated} updated.`);
+        } catch (error) {
+          ctx.logger.error('Reader sync failed', error);
+          ctx.notice(`Reader: Sync failed. ${toErrorMessage(error)}`);
+        }
+      },
+    },
     {
       id: 'download',
       name: 'Download entire Readwise library (force)',

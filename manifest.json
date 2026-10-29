@@ -1,6 +1,6 @@
 {
-    "id": "readwise-obsidian",
-    "name": "Readwise Obsidian",
+    "id": "readwise-sync",
+    "name": "Readwise Sync",
     "version": "2.4.3",
     "minAppVersion": "1.6.6",
     "description": "Mirror your Readwise library directly to your vault.",

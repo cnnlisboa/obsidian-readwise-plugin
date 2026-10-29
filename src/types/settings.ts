@@ -5,6 +5,14 @@ export interface PluginSettings {
   autoSync: boolean; // Whether to automatically sync on startup
   previewSync: boolean; // Review planned vault changes before writing
   preserveLocalSection: boolean; // Keep the editable local section across syncs
+  readerEnabled: boolean;
+  readerTag: string;
+  readerFolder: string;
+  readerOutputMode: 'separate' | 'combined';
+  readerLinkHighlights: boolean;
+  readerDownloadImages: boolean;
+  readerDownloadSourceFiles: boolean;
+  readerDocumentTemplate: string;
   highlightSortOldestToNewest: boolean; // Sort highlights chronologically from oldest to newest
   highlightSortByLocation: boolean; // Sort highlights by their location in the document
   highlightDiscard: boolean; // Filter out discarded highlights

@@ -123,6 +123,15 @@ export class Controller {
       }
       this.ctx.setStatusBarText(`Readwise: Synced ${humanReadableFormat(this.ctx.settings.lastUpdated)}`);
       if (this.ctx.settings.syncNotifications) this.ctx.notice(`Readwise: Sync complete. ${summarizeSyncReport(report)}`);
+      if (this.ctx.settings.readerEnabled) {
+        try {
+          const readerReport = await this.plugin.syncReaderDocuments();
+          if (this.ctx.settings.syncNotifications) this.ctx.notice(`Reader: Sync complete. ${summarizeSyncReport(readerReport)}`);
+        } catch (readerError) {
+          this.ctx.logger.error('Reader sync failed:', readerError);
+          this.ctx.notice(`Reader: Sync failed. ${readerError}`);
+        }
+      }
     } catch (error) {
       this.ctx.logger.error('Error during sync:', error);
       this.ctx.notice(`Readwise: Sync failed. ${error}`);

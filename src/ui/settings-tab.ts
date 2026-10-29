@@ -189,13 +189,13 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
 
   // Button-based authentication inspired by the official Readwise plugin
   private getReadwiseMirrorClientId() {
-    let readwiseMirrorClientId = window.localStorage.getItem('readwise-obsidian-client-id');
+    let readwiseMirrorClientId = window.localStorage.getItem('readwise-sync-client-id') ?? window.localStorage.getItem('readwise-obsidian-client-id');
     if (readwiseMirrorClientId) {
       return readwiseMirrorClientId;
     }
 
     readwiseMirrorClientId = Math.random().toString(36).substring(2, 15);
-    window.localStorage.setItem('readwise-obsidian-client-id', readwiseMirrorClientId);
+    window.localStorage.setItem('readwise-sync-client-id', readwiseMirrorClientId);
     return readwiseMirrorClientId;
   }
 
@@ -273,6 +273,11 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
           this.renderFileTracking(container);
           this.renderFilenameSettings(container);
         },
+      },
+      {
+        id: 'reader',
+        name: 'Reader',
+        render: (container) => this.renderReaderSettings(container),
       },
       {
         id: 'frontmatter-template',
@@ -635,6 +640,89 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
         this.ctx.settings.preserveLocalSection = value;
         await this.ctx.saveAndApplySettings();
       }));
+  }
+
+  private renderReaderSettings(containerEl: HTMLElement): void {
+    new Setting(containerEl).setName('Reader documents').setHeading();
+    new Setting(containerEl)
+      .setName('Sync tagged reader documents')
+      .setDesc('Fetch full content for documents with the chosen reader tag after each Readwise highlights sync. A separate command can run this alone.')
+      .addToggle((toggle) => toggle.setValue(this.ctx.settings.readerEnabled).onChange(async (value) => {
+        this.ctx.settings.readerEnabled = value;
+        await this.ctx.saveAndApplySettings();
+      }));
+    new Setting(containerEl)
+      .setName('Reader tag')
+      .setDesc('Exact reader tag key to select documents. Leave blank to prevent reader sync.')
+      .addText((text) => text.setValue(this.ctx.settings.readerTag).onChange(async (value) => {
+        this.ctx.settings.readerTag = value.trim();
+        await this.ctx.saveAndApplySettings();
+      }));
+    new Setting(containerEl)
+      .setName('Document folder')
+      .setDesc('Vault-relative folder for full reader documents and downloaded assets.')
+      .addText((text) => text.setValue(this.ctx.settings.readerFolder).onChange(async (value) => {
+        this.ctx.settings.readerFolder = value.trim();
+        await this.ctx.saveAndApplySettings();
+      }));
+    new Setting(containerEl)
+      .setName('Link matching highlight notes')
+      .setDesc('Match by exact source URL. Adds a link in each direction when one unambiguous Readwise note is found.')
+      .addToggle((toggle) => toggle.setValue(this.ctx.settings.readerLinkHighlights).onChange(async (value) => {
+        this.ctx.settings.readerLinkHighlights = value;
+        await this.ctx.saveAndApplySettings();
+      }));
+    new Setting(containerEl)
+      .setName('Download inline images')
+      .setDesc('Save available images beside the full document for offline use.')
+      .addToggle((toggle) => toggle.setValue(this.ctx.settings.readerDownloadImages).onChange(async (value) => {
+        this.ctx.settings.readerDownloadImages = value;
+        await this.ctx.saveAndApplySettings();
+      }));
+    new Setting(containerEl)
+      .setName('Download PDF and e-book files')
+      .setDesc('Save available original PDF and e-book source files in the assets folder.')
+      .addToggle((toggle) => toggle.setValue(this.ctx.settings.readerDownloadSourceFiles).onChange(async (value) => {
+        this.ctx.settings.readerDownloadSourceFiles = value;
+        await this.ctx.saveAndApplySettings();
+      }));
+    new Setting(containerEl)
+      .setName('Document and highlights layout')
+      .setDesc('Linked keeps a link to the Readwise highlights note. Combined copies its current body below the full content.')
+      .addDropdown((dropdown) => dropdown
+        .addOption('separate', 'Linked notes')
+        .addOption('combined', 'Combined document')
+        .setValue(this.ctx.settings.readerOutputMode)
+        .onChange(async (value) => {
+          this.ctx.settings.readerOutputMode = value as 'separate' | 'combined';
+          await this.ctx.saveAndApplySettings();
+        }));
+    let previewEl: HTMLElement;
+    const updateReaderPreview = (template: string) => {
+      if (!previewEl) return;
+      try {
+        previewEl.setText(this.env.renderString(template, {
+          title: 'Sample article', author: 'Sample author', notes: 'A document note',
+          content: '## Full content\n\nA sample paragraph.', source_file: '',
+          highlight_link: '[[Sample highlights]]', highlights: 'Highlights: [[Sample highlights]]',
+        }));
+      } catch (error) {
+        previewEl.setText(`Template error: ${this.getErrorMessage(error)}`);
+      }
+    };
+    new Setting(containerEl)
+      .setName('Document template')
+      .setDesc('Nunjucks variables include title, author, notes, content, source_file, highlight_link, and highlights.')
+      .addTextArea((text) => {
+        text.setValue(this.ctx.settings.readerDocumentTemplate).onChange(async (value) => {
+          this.ctx.settings.readerDocumentTemplate = value;
+          await this.ctx.saveAndApplySettings();
+          updateReaderPreview(value);
+        });
+        text.inputEl.rows = 12;
+      });
+    previewEl = containerEl.createEl('pre', { cls: 'readwise-template-preview' });
+    updateReaderPreview(this.ctx.settings.readerDocumentTemplate);
   }
 
   private renderAtomicHighlightsSettings(containerEl: HTMLElement): void {

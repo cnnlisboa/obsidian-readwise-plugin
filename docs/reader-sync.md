@@ -1,0 +1,32 @@
+# Reader document sync
+
+Readwise Sync can import Reader documents bearing a chosen tag. It uses the [Reader Document LIST API](https://readwise.io/reader_api) with `tag`, `withHtmlContent=true`, and `withRawSourceUrl=true`.
+
+## Configure
+
+1. Enter a Readwise access token in General settings.
+2. In the Reader tab, enter the exact Reader tag key and choose a vault folder.
+3. Enable **Sync tagged reader documents**.
+4. Run **Sync tagged Reader documents** from the command palette, or run the normal Readwise highlights sync.
+
+The Reader sync fetches all currently tagged documents each time. It does not delete vault notes when a Reader document loses the tag or is deleted. The optional preview shows planned document paths before Reader writes. The Reader tab also offers a Nunjucks document template and separate or combined highlight layout. Successful Reader writes appear in the configurable sync log when logging is enabled; log templates can use `source` to distinguish Reader from Readwise.
+
+## Output
+
+The plugin saves HTML content as Markdown. Separate toggles control copying inline images and saving available PDF or EPUB source files in `_assets`. Both are on by default. Documents with neither HTML nor a saved source file report an error. Embedded media and externally hosted resources that cannot be downloaded may remain as links.
+
+Each note has a stable `reader_id` property. It also stores the Reader URL, source URL, and update time. The template receives Reader fields plus `content`, `source_file`, `highlight_link`, and `highlights`. `notes` is the Reader document note. With **Preserve local writing**, text between the existing local markers survives regeneration; writing elsewhere in a generated note will be replaced at the next sync.
+
+## Highlights
+
+The plugin matches a Reader document to a Readwise highlight note only when their source URLs match exactly and the match is unambiguous. It checks `source_url` or `reader_source_url` frontmatter, then the default `Source URL:` line in the note body. A custom highlight template without any of these fields cannot be matched automatically.
+
+In linked mode, the document contains a wiki link to the highlights note and the highlights note gets a managed link back. In combined mode, the current highlight note body is copied into the full document. The Readwise highlight note still exists as the sync source. Reader highlights are not fetched separately in this phase, and notes without a matching Readwise highlight note have no highlights section.
+
+## API and sync limits
+
+The [Reader API](https://readwise.io/reader_api) limits document LIST requests to 20 per minute and returns raw source URLs that expire after one hour. The plugin pages through the full tag selection and retries HTTP 429 responses using `Retry-After`. Large libraries and asset downloads can take time. Reader note edits in Obsidian are not written back to Readwise yet; write-back is planned for Phase 5. The [Readwise changelog](https://docs.readwise.io/changelog) records current API changes.
+
+## Related
+
+- [README](../README.md) — Plugin overview and commands.

@@ -24,9 +24,10 @@ export function renderSyncLog(
   report: SyncReport,
   items: SyncLogItem[],
   date: string,
-  time: string
+  time: string,
+  source = 'Readwise'
 ): string {
-  const context = { date, time, items, report, summary: summarizeSyncReport(report) };
+  const context = { date, time, source, items, report, summary: summarizeSyncReport(report) };
   return [
     env.renderString(settings.logTitleTemplate, context),
     env.renderString(settings.logBodyTemplate, context),

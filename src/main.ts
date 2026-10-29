@@ -12,6 +12,7 @@ import { buildReadwiseDocument } from 'services/readwise-document-mapper';
 import { ReadwiseEnvironment, ReadwiseLoader } from 'services/readwise-environment';
 import { createSyncReport, type SyncReport } from 'services/sync-report';
 import { renderSyncLog, resolveSyncLogPath } from 'services/sync-log';
+import { syncReaderDocuments } from 'services/reader-sync';
 import { filterHighlights, renderMarkdownTemplate } from 'services/template-rendering';
 import spacetime from 'spacetime';
 import { AUTHOR_SEPARATORS, DEFAULT_SETTINGS } from 'src/constants';
@@ -90,7 +91,7 @@ export default class ReadwiseMirror extends Plugin {
     // Move UI setup to onLayoutReady
     this.app.workspace.onLayoutReady(() => {
       void (async () => {
-        await this.lock.acquire('readwise-obsidian:loaded');
+        await this.lock.acquire('readwise-sync:loaded');
         const statusBarItem = this.addStatusBarItem();
         this._notify = new Notify(statusBarItem);
         await this.initializeUI();
@@ -99,8 +100,8 @@ export default class ReadwiseMirror extends Plugin {
   }
 
   public onunload(): void {
-    this.logger.debug('Readwise Obsidian unloaded.');
-    this.lock.release('readwise-obsidian:loaded');
+    this.logger.debug('Readwise Sync unloaded.');
+    this.lock.release('readwise-sync:loaded');
     super.onunload();
   }
 
@@ -108,7 +109,7 @@ export default class ReadwiseMirror extends Plugin {
     try {
       await this.loadAndApplySettings();
       this.addSettingTab(new ReadwiseMirrorSettingTab(this, this.ctx, this.env));
-      this.logger.debug('Readwise Obsidian loaded.');
+      this.logger.debug('Readwise Sync loaded.');
 
       // Instantiate controller and attach to context
       this._frontmatterManager = new FrontmatterManager(this.ctx, this.env, this.app.fileManager);
@@ -165,7 +166,7 @@ export default class ReadwiseMirror extends Plugin {
     // Order matters: defaults first, then loaded values override them
     Object.assign(this.settings, DEFAULT_SETTINGS, loaded ?? {});
 
-    if (this.lock.isAcquired('readwise-obsidian:loaded')) {
+    if (this.lock.isAcquired('readwise-sync:loaded')) {
       await this.applySettings();
     }
   }
@@ -258,7 +259,7 @@ export default class ReadwiseMirror extends Plugin {
       });
   }
 
-  public async writeLogToMarkdown(library: Library, report: SyncReport = createSyncReport([])) {
+  public async writeLogToMarkdown(library: Library, report: SyncReport = createSyncReport([]), source = 'Readwise') {
     const vault = this.app.vault;
     const path = resolveSyncLogPath(this.settings);
     const abstractFile = vault.getAbstractFileByPath(path);
@@ -270,7 +271,7 @@ export default class ReadwiseMirror extends Plugin {
       highlights: book.highlights.length,
       category: book.category,
     }));
-    const logString = renderSyncLog(this.env, this.settings, report, items, now.format('iso-short'), now.time());
+    const logString = renderSyncLog(this.env, this.settings, report, items, now.format('iso-short'), now.time(), source);
 
     try {
       const parentPath = path.slice(0, path.lastIndexOf('/'));
@@ -316,6 +317,28 @@ export default class ReadwiseMirror extends Plugin {
       if (actions.length > 60) fragment.createEl('p', { text: `${actions.length - 60} more actions are not shown.` });
     });
     return new Promise((resolve) => new ConfirmDialog(this.app, 'Preview Readwise sync', prompt, resolve).open());
+  }
+
+  public async syncReaderDocuments(): Promise<SyncReport> {
+    if (this.lock.isAcquired('reader-sync')) throw new Error('Reader sync is already running.');
+    await this.lock.acquire('reader-sync');
+    try {
+      const report = await syncReaderDocuments(this.ctx, this.env, async (actions) => {
+        const prompt = createFragment((fragment) => {
+          fragment.createEl('p', { text: `${actions.length} tagged Reader documents will be checked. Content and assets may be downloaded.` });
+          const list = fragment.createEl('ul');
+          for (const action of actions.slice(0, 60)) list.createEl('li', { text: action });
+          if (actions.length > 60) fragment.createEl('p', { text: `${actions.length - 60} more documents are not shown.` });
+        });
+        return new Promise((resolve) => new ConfirmDialog(this.app, 'Preview Reader sync', prompt, resolve).open());
+      });
+      if (this.settings.logFile && report.events.length > 0) {
+        await this.writeLogToMarkdown({ books: {}, categories: new Set(), highlightCount: 0 }, report, 'Reader');
+      }
+      return report;
+    } finally {
+      this.lock.release('reader-sync');
+    }
   }
 
   // Write a library of Readwise books to markdown files

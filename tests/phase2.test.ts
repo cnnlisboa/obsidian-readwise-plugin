@@ -29,14 +29,14 @@ describe('Phase 2 output controls', () => {
 
   it('formats a report and configurable sync log', () => {
     const report = createSyncReport([
-      { action: 'created', path: 'Readwise Obsidian/Books/One.md' },
-      { action: 'updated', path: 'Readwise Obsidian/Books/Two.md' },
+      { action: 'created', path: 'Readwise Sync/Books/One.md' },
+      { action: 'updated', path: 'Readwise Sync/Books/Two.md' },
     ]);
     const settings = { ...DEFAULT_SETTINGS, logFilePath: 'Logs/Readwise.md',
       logTitleTemplate: '# Sync {{ date }}', logBodyTemplate: '{{ summary }}\n{% for event in report.events %}{{ event.action }} {{ event.path }}\n{% endfor %}' };
     expect(resolveSyncLogPath(settings)).toBe('Logs/Readwise.md');
     expect(summarizeSyncReport(report)).toContain('1 created, 1 updated');
-    expect(renderSyncLog(new Environment(), settings, report, [], '2026-10-29', '12:00')).toContain('created Readwise Obsidian/Books/One.md');
+    expect(renderSyncLog(new Environment(), settings, report, [], '2026-10-29', '12:00')).toContain('created Readwise Sync/Books/One.md');
   });
 
   it('rejects log paths outside the vault', () => {

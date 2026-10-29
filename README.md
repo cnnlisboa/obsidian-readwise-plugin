@@ -1,10 +1,10 @@
-# Readwise Obsidian
+# Readwise Sync
 
 >[!WARNING]  
 >Readwise Mirror 2.x is a major rewrite of the plugin which will break internal links if you update right away. This is due to changes how the filenames for notes created by this plugin are generated and handled.
 >The documentation contains a step-by-step guide how you can prepare an existing Readwise library for an upgrade to 2.x.x by adding the `uri` tracking property to the frontmatter of your notes before upgrading. This will ensure links to notes synced from your Readwise library can be updated by Obsidian after the upgrade. You can find the guide [in this section](#upgrading-from-1xx-to-2xx).
 
-**Readwise Obsidian** is Connrado Lisboa's fork of the open source Readwise Mirror plugin for the powerful note-taking and knowledge-base application [Obsidian](http://obsidian.md/). This plugin allows a user to "mirror" their entire Readwise library by automatically downloading all highlights/notes and syncing changes directly into an Obsidian vault.
+**Readwise Sync** is Connrado Lisboa's fork of the open source Readwise Mirror plugin for the powerful note-taking and knowledge-base application [Obsidian](http://obsidian.md/). This plugin allows a user to "mirror" their entire Readwise library by automatically downloading all highlights/notes and syncing changes directly into an Obsidian vault.
 
 Its advanced features allow you to keep internal links to your Readwise notes intact across syncs, protect or update frontmatter properties in your notes, and define custom filenames based on each Readwise item's properties.
 
@@ -16,13 +16,16 @@ The first time this plugin is ran, it will do a full sync, downloading all conte
 
 ## Fork controls
 
-This fork installs as `readwise-obsidian` alongside the original plugin. Its default note folder is `Readwise Obsidian`, and startup sync is off for a fresh installation.
+This fork installs as `readwise-sync` alongside the original plugin. Its default note folder is `Readwise Sync`, and startup sync is off for a fresh installation.
 
-In General settings, turn on **Preview sync changes** to review planned document actions before a library sync. Turn on **Preserve local writing** to keep text between the `readwise-obsidian:local` markers in generated notes. The sync log has an optional vault-relative path override and Nunjucks templates for its title and body.
+In General settings, turn on **Preview sync changes** to review planned document actions before a library sync. Turn on **Preserve local writing** to keep text between the `readwise-obsidian:local` markers in generated notes. The marker name remains stable for existing notes. The sync log has an optional vault-relative path override and Nunjucks templates for its title and body.
+
+The Reader tab can sync full documents selected by an exact Reader tag, including their document notes and available content assets. It can link matching Readwise highlight notes or copy their current body into the document note. See [Reader document sync](docs/reader-sync.md) for setup, matching rules, and limits.
 
 ## Commands
 
 - `Sync new highlights`: Download all new highlights since previous update
+- `Sync tagged Reader documents`: Download full documents selected by the Reader tag
 - `Test Readwise API key`: Ensure the Access Token works
 - `Delete Readwise library`: Remove the Readwise library file folder from the Obsidian vault
 - `Download entire Readwise library (force)`: Forces a full download of all content from Readwise

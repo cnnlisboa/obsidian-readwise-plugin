@@ -82,6 +82,8 @@ export class Controller {
     }
     await this.ctx.syncLock?.acquire('library-sync');
     try {
+      // A change made while a long sync is running must still be eligible next time.
+      const syncStartedAt = new Date().toISOString();
       let library: Library;
       if (!this.ctx.settings.lastUpdated) {
         if (this.ctx.settings.syncNotifications) this.ctx.notice('Readwise: Downloading full Readwise library');
@@ -106,8 +108,14 @@ export class Controller {
       this.prepareAtomicHighlightsCategory(library);
       await this.plugin.writeLibraryToMarkdown(library);
       if (this.ctx.settings.logFile) await this.plugin.writeLogToMarkdown(library);
-      this.ctx.settings.lastUpdated = new Date().toISOString();
-      await this.ctx.saveAndApplySettings();
+      const previousCheckpoint = this.ctx.settings.lastUpdated;
+      this.ctx.settings.lastUpdated = syncStartedAt;
+      try {
+        await this.ctx.saveAndApplySettings();
+      } catch (error) {
+        this.ctx.settings.lastUpdated = previousCheckpoint;
+        throw error;
+      }
       this.ctx.setStatusBarText(`Readwise: Synced ${humanReadableFormat(this.ctx.settings.lastUpdated)}`);
     } catch (error) {
       this.ctx.logger.error('Error during sync:', error);

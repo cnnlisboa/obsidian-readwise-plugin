@@ -6,7 +6,7 @@ export const Plugin = jest.fn();
 export const TFile = jest.fn();
 export const TFolder = jest.fn();
 export class PluginManifest {}
-export interface CachedMetadata {}
+export type CachedMetadata = Record<string, unknown>;
 
 export function parseYaml(yaml: string): unknown {
   return parse(yaml);

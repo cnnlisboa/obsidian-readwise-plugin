@@ -6,7 +6,7 @@ import { getPluginCommands } from '../utils/plugin-commands';
 import type { Controller } from './controller';
 
 /**
- * Manages command registration for the Readwise Mirror plugin
+ * Manages command registration for the Readwise Plugin
  */
 export class CommandManager {
   constructor(

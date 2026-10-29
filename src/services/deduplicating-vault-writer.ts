@@ -11,6 +11,7 @@ export class DeduplicatingVaultWriter {
   private totalFileCount = 0;
   private fileCount = 0;
   private readonly app = this.ctx.app;
+  private trackedFileIndex = new Map<string, TFile[]>();
 
   constructor(
     private readonly ctx: PluginContext,
@@ -30,13 +31,19 @@ export class DeduplicatingVaultWriter {
    * @param categories - The categories to create folders for
    */
   public async createCategoryFolders(categories: Set<string>) {
+    await this.ensureFolder(this.ctx.settings.baseFolderName);
     for (const category of categories) {
-      const path = this.getCategoryPath(category);
-      const abstractFolder = this.vault.getAbstractFileByPath(path);
+      await this.ensureFolder(this.getCategoryPath(category));
+    }
+  }
 
-      if (!abstractFolder) {
-        await this.vault.createFolder(path);
-        this.ctx.logger.debug('Successfully created folder', path);
+  private async ensureFolder(path: string): Promise<void> {
+    const parts = normalizePath(path).split('/').filter(Boolean);
+    for (let i = 1; i <= parts.length; i++) {
+      const currentPath = parts.slice(0, i).join('/');
+      if (!this.vault.getAbstractFileByPath(currentPath)) {
+        await this.vault.createFolder(currentPath);
+        this.ctx.logger.debug('Created folder', currentPath);
       }
     }
   }
@@ -52,55 +59,41 @@ export class DeduplicatingVaultWriter {
       return []; // No tracking or no readwise_url
     }
 
-    // Get all files in the vault
-    const files = this.vault.getMarkdownFiles();
-
-    // Filter files by the tracking property
-    const matchedFiles = files.filter((file) => {
-      const metadata = this.app.metadataCache.getFileCache(file);
-      const isTracked = isTrackedReadwiseNote(file, this.app, this.ctx.settings);
-      const isInLibrary = isInReadwiseLibrary(file, this.ctx.settings);
-
-      // If trackAcrossVault is enabled, only check if it's a Readwise note.
-      // Otherwise, check if it's a Readwise note AND in the Readwise library.
-      const shouldKeep = this.ctx.settings.trackAcrossVault ? isTracked : isTracked && isInLibrary;
-
-      if (!shouldKeep) {
-        return false;
-      }
-
-      // Compare the tracking property value to the readwise_url
-      return metadata?.frontmatter?.[this.ctx.settings.trackingProperty] === doc.readwise_url;
-    });
-
-    // Sort: Files WITHOUT "duplicate" property come first
+    const matchedFiles = [...(this.trackedFileIndex.get(doc.readwise_url) ?? [])];
     return matchedFiles.sort((a, b) => {
       const cacheA = this.app.metadataCache.getFileCache(a);
       const cacheB = this.app.metadataCache.getFileCache(b);
-
-      // Check if the 'duplicate' key exists in frontmatter (regardless of value)
       const hasDuplicateA = cacheA?.frontmatter?.duplicate !== undefined;
       const hasDuplicateB = cacheB?.frontmatter?.duplicate !== undefined;
-
-      // If both have it or both don't have it, keep original order
-      if (hasDuplicateA === hasDuplicateB) {
-        return 0;
-      }
-
-      // If A does NOT have it, A comes first (-1)
-      // If A HAS it (and B doesn't per above check), A comes last (1)
-      return !hasDuplicateA ? -1 : 1;
+      return Number(hasDuplicateA) - Number(hasDuplicateB);
     });
   }
 
+  public buildTrackedFileIndex(): void {
+    this.trackedFileIndex = new Map();
+    if (!this.ctx.settings.trackFiles || !this.ctx.settings.trackingProperty) return;
+    for (const file of this.vault.getMarkdownFiles()) {
+      const metadata = this.app.metadataCache.getFileCache(file);
+      const isTracked = isTrackedReadwiseNote(file, this.app, this.ctx.settings);
+      const isInLibrary = isInReadwiseLibrary(file, this.ctx.settings);
+      const shouldKeep = this.ctx.settings.trackAcrossVault ? isTracked : isTracked && isInLibrary;
+      if (!shouldKeep) continue;
+      const url: unknown = metadata?.frontmatter?.[this.ctx.settings.trackingProperty];
+      if (typeof url !== 'string') continue;
+      const files = this.trackedFileIndex.get(url) ?? [];
+      files.push(file);
+      this.trackedFileIndex.set(url, files);
+    }
+  }
+
   /**
-   * Generates a short hash based on the metadata ID and
+   * Generates a stable suffix from a Readwise document or highlight ID.
    *
-   * @param file - The readwise file to generate a hash for
+   * @param id - The Readwise ID to generate a suffix for
    * @returns A short hash
    */
-  public generateShortHash(basename: string): string {
-    return md5(basename + Date.now()).substring(0, 4);
+  public generateShortHash(id: number): string {
+    return md5(String(id)).substring(0, 8);
   }
 
   /**
@@ -221,6 +214,7 @@ export class DeduplicatingVaultWriter {
   }
 
   public async processFrontmatter(readwiseFiles: BaseFile[]): Promise<void> {
+    this.buildTrackedFileIndex();
     this.ctx.logger.debug('Processing frontmatter for Readwise files', { readwiseFiles });
 
     // Reset the file count
@@ -337,7 +331,7 @@ export class DeduplicatingVaultWriter {
           return existingFile;
         }
         // Create new path with hash
-        const hash = this.generateShortHash(file.basename);
+        const hash = this.generateShortHash(file.type === 'base' ? file.doc.id : file.id);
         const newPath = normalizePath(`${this.getCategoryPathFromFile(file)}/${file.basename} ${hash}.md`);
         const newFileExists = await this.app.vault.adapter.exists(newPath, false);
         if (newFileExists) {

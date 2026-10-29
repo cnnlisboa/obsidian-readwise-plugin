@@ -185,13 +185,13 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
 
   // Button-based authentication inspired by the official Readwise plugin
   private getReadwiseMirrorClientId() {
-    let readwiseMirrorClientId = window.localStorage.getItem('readwise-mirror-obsidian-client-id');
+    let readwiseMirrorClientId = window.localStorage.getItem('connrado-readwise-obsidian-client-id');
     if (readwiseMirrorClientId) {
       return readwiseMirrorClientId;
     }
 
     readwiseMirrorClientId = Math.random().toString(36).substring(2, 15);
-    window.localStorage.setItem('readwise-mirror-obsidian-client-id', readwiseMirrorClientId);
+    window.localStorage.setItem('connrado-readwise-obsidian-client-id', readwiseMirrorClientId);
     return readwiseMirrorClientId;
   }
 

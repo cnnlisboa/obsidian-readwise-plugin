@@ -18,7 +18,7 @@ class Logger {
 
   group(label: string): void {
     if (this.debugMode) {
-      console.debug(`${this.getIndent()}▼ Readwise Mirror: ${label}`);
+      console.debug(`${this.getIndent()}▼ Readwise Plugin: ${label}`);
       this.groupDepth++;
     }
   }
@@ -32,16 +32,16 @@ class Logger {
 
   debug(...messages: unknown[]): void {
     if (this.debugMode) {
-      console.debug(`${this.getIndent()}Readwise Mirror:`, ...messages);
+      console.debug(`${this.getIndent()}Readwise Plugin:`, ...messages);
     }
   }
 
   warn(...messages: unknown[]): void {
-    console.warn(`${this.getIndent()}Readwise Mirror:`, ...messages);
+    console.warn(`${this.getIndent()}Readwise Plugin:`, ...messages);
   }
 
   error(...messages: unknown[]): void {
-    console.error(`${this.getIndent()}Readwise Mirror:`, ...messages);
+    console.error(`${this.getIndent()}Readwise Plugin:`, ...messages);
   }
 
   time(label: string): void {
@@ -52,11 +52,11 @@ class Logger {
     if (!this.debugMode) return;
     const startTime = this.timers.get(label);
     if (startTime === undefined) {
-      console.debug(`${this.getIndent()}Readwise Mirror: ${label} (timer not started)`);
+      console.debug(`${this.getIndent()}Readwise Plugin: ${label} (timer not started)`);
       return;
     }
     const elapsedMs = Date.now() - startTime;
-    console.debug(`${this.getIndent()}Readwise Mirror: ${label} (${elapsedMs}ms)`, ...messages);
+    console.debug(`${this.getIndent()}Readwise Plugin: ${label} (${elapsedMs}ms)`, ...messages);
   }
 
   timeEnd(label: string): void {
@@ -66,7 +66,7 @@ class Logger {
       return;
     }
     const elapsedMs = Date.now() - startTime;
-    console.debug(`${this.getIndent()}Readwise Mirror: ${label} (${elapsedMs}ms)`);
+    console.debug(`${this.getIndent()}Readwise Plugin: ${label} (${elapsedMs}ms)`);
   }
 }
 

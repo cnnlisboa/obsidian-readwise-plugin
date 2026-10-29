@@ -1,10 +1,10 @@
-# Readwise Mirror Plugin
+# Readwise Plugin
 
 >[!WARNING]  
 >Readwise Mirror 2.x is a major rewrite of the plugin which will break internal links if you update right away. This is due to changes how the filenames for notes created by this plugin are generated and handled.
 >The documentation contains a step-by-step guide how you can prepare an existing Readwise library for an upgrade to 2.x.x by adding the `uri` tracking property to the frontmatter of your notes before upgrading. This will ensure links to notes synced from your Readwise library can be updated by Obsidian after the upgrade. You can find the guide [in this section](#upgrading-from-1xx-to-2xx).
 
-**Readwise Mirror** is an unoffical open source plugin for the powerful note-taking and knowledge-base application [Obsidian](http://obsidian.md/). This plugin allows a user to "mirror" their entire Readwise library by automatically downloading all highlights/notes and syncing changes directly into an Obsidian vault.
+**Readwise Plugin** is Connrado Lisboa's fork of the open source Readwise Mirror plugin for the powerful note-taking and knowledge-base application [Obsidian](http://obsidian.md/). This plugin allows a user to "mirror" their entire Readwise library by automatically downloading all highlights/notes and syncing changes directly into an Obsidian vault.
 
 Its advanced features allow you to keep internal links to your Readwise notes intact across syncs, protect or update frontmatter properties in your notes, and define custom filenames based on each Readwise item's properties.
 

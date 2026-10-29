@@ -87,7 +87,7 @@ export default class ReadwiseMirror extends Plugin {
     // Move UI setup to onLayoutReady
     this.app.workspace.onLayoutReady(() => {
       void (async () => {
-        await this.lock.acquire('readwise-mirror:loaded');
+        await this.lock.acquire('readwise-plugin:loaded');
         const statusBarItem = this.addStatusBarItem();
         this._notify = new Notify(statusBarItem);
         await this.initializeUI();
@@ -96,8 +96,8 @@ export default class ReadwiseMirror extends Plugin {
   }
 
   public onunload(): void {
-    this.logger.debug('Readwise Mirror plugin unloaded.');
-    this.lock.release('readwise-mirror:loaded');
+    this.logger.debug('Readwise Plugin unloaded.');
+    this.lock.release('readwise-plugin:loaded');
     super.onunload();
   }
 
@@ -105,7 +105,7 @@ export default class ReadwiseMirror extends Plugin {
     try {
       await this.loadAndApplySettings();
       this.addSettingTab(new ReadwiseMirrorSettingTab(this, this.ctx, this.env));
-      this.logger.debug('Readwise Mirror plugin loaded.');
+      this.logger.debug('Readwise Plugin loaded.');
 
       // Instantiate controller and attach to context
       this._frontmatterManager = new FrontmatterManager(this.ctx, this.env, this.app.fileManager);
@@ -162,7 +162,7 @@ export default class ReadwiseMirror extends Plugin {
     // Order matters: defaults first, then loaded values override them
     Object.assign(this.settings, DEFAULT_SETTINGS, loaded ?? {});
 
-    if (this.lock.isAcquired('readwise-mirror:loaded')) {
+    if (this.lock.isAcquired('readwise-plugin:loaded')) {
       await this.applySettings();
     }
   }
@@ -278,7 +278,8 @@ export default class ReadwiseMirror extends Plugin {
     try {
       if (abstractFile) {
         // If log file already exists, append to the content instead of overwriting
-        const logFile = vault.getFiles().filter((file) => file.name === this.settings.logFileName)[0];
+        const logFile = vault.getFileByPath(path);
+        if (!logFile) throw new Error(`Sync log is not a file: ${path}`);
         this.logger.debug('logFile:', logFile);
 
         await vault.process(logFile, (content) => `${content}\n\n${logString}`);
@@ -287,6 +288,7 @@ export default class ReadwiseMirror extends Plugin {
       }
     } catch (err) {
       this.logger.error('Error writing to sync log file', err);
+      throw err;
     }
   }
 
@@ -299,7 +301,7 @@ export default class ReadwiseMirror extends Plugin {
       this.logger.error('Failed to create category folders', err);
       this.notify.notice('Readwise: Failed to create category folders. Sync aborted.');
       this.logger.groupEnd();
-      return;
+      throw err;
     }
 
     // Prepare all files first
@@ -319,6 +321,7 @@ export default class ReadwiseMirror extends Plugin {
     } catch (err) {
       this.logger.error('Failed to process files batch', err);
       this.notify.notice('Readwise: Failed to process some files during sync.');
+      throw err;
     } finally {
       this.logger.groupEnd();
     }
@@ -338,6 +341,7 @@ export default class ReadwiseMirror extends Plugin {
    */
   private async processReadwiseLibrary(library: Library): Promise<BaseFile[]> {
     const readwiseFiles: BaseFile[] = [];
+    this.deduplicatingVaultWriter.buildTrackedFileIndex();
 
     // Get total number of records
     const booksTotal = Object.keys(library.books).length;
@@ -395,7 +399,7 @@ export default class ReadwiseMirror extends Plugin {
           );
 
           if (this.settings.enableFileNameUpdates) {
-            const hash = this.deduplicatingVaultWriter.generateShortHash(basename);
+            const hash = this.deduplicatingVaultWriter.generateShortHash(book.user_book_id);
 
             try {
               for (let i = 0; i < duplicates.length; i++) {
@@ -432,6 +436,7 @@ export default class ReadwiseMirror extends Plugin {
               await this.app.fileManager.renameFile(primary, newPath);
             } catch (error) {
               this.logger.error(`Error renaming file ${primary.path}`, error);
+              throw error;
             }
           }
 

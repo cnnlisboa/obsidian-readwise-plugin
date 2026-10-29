@@ -11,6 +11,7 @@ module.exports = {
       tsconfig: {
         module: 'CommonJS',      // override ESNext → CJS for Jest
         moduleResolution: 'node', // match CommonJS resolution
+        esModuleInterop: true,
       }
     }],
     // Also transform .js files from ESM-only node_modules
@@ -20,6 +21,7 @@ module.exports = {
     '/node_modules/(?!(filenamify|filename-reserved-regex|strip-outer|trim-repeated))',
   ],
   moduleNameMapper: {
+    '^src/(.*)$': '<rootDir>/src/$1',
     '^obsidian$': '<rootDir>/src/test/__mocks__/obsidian.ts',
     '^filenamify$': '<rootDir>/src/test/__mocks__/filenamify.ts',
   }

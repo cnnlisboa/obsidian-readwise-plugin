@@ -121,7 +121,7 @@ export default class ReadwiseApi {
   ): Promise<Export[]> {
     const url = `${API_ENDPOINT}/${contentType}?`;
     let data: Record<string, unknown> | undefined;
-    let nextPageCursor: number | undefined;
+    let nextPageCursor: string | undefined;
     let rateLimitRetries = 0;
 
     const results: Export[] = [];
@@ -139,7 +139,7 @@ export default class ReadwiseApi {
           queryParams.append('ids', bookId.join(','));
         }
         if (nextPageCursor !== undefined) {
-          queryParams.append('pageCursor', nextPageCursor.toString());
+          queryParams.append('pageCursor', nextPageCursor);
         }
         if (contentType === 'export' && includeDeleted) {
           queryParams.append('includeDeleted', 'true');
@@ -196,7 +196,7 @@ export default class ReadwiseApi {
             this.ctx.logger.warn('No results found in the response data.');
           }
           const rawNextPageCursor = pageData.nextPageCursor;
-          nextPageCursor = typeof rawNextPageCursor === 'number' ? rawNextPageCursor : undefined;
+          nextPageCursor = typeof rawNextPageCursor === 'string' && rawNextPageCursor ? rawNextPageCursor : undefined;
           if (nextPageCursor === undefined) {
             break;
           }
@@ -227,7 +227,13 @@ export default class ReadwiseApi {
     // Sort results by user_book_id ascending
     const sortedResults = [...results].sort((a, b) => a.user_book_id - b.user_book_id);
 
+    const selectedTags = this.ctx.settings.filterNotesByTag
+      ? new Set(this.ctx.settings.filteredTags.map((tag) => tag.trim().toLocaleLowerCase()).filter(Boolean))
+      : null;
     for (const record of sortedResults) {
+      if (selectedTags?.size) {
+        if (!record.book_tags?.some((tag) => selectedTags.has(tag.name.trim().toLocaleLowerCase()))) continue;
+      }
       library.books[record.user_book_id] = record;
       library.categories.add(record.category);
       library.highlightCount += record.highlights.length;

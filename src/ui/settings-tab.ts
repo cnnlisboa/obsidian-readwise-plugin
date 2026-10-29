@@ -23,6 +23,7 @@ import { WarningDialog } from 'ui/dialog';
 import { sanitizeFrontmatterTemplate, validateFrontmatterTemplate } from 'utils/frontmatter-utils';
 import { hasAtomizeBlocks } from 'utils/template-utils';
 import type { PluginSettings } from 'types/settings';
+import { parseBookRoutes } from 'services/book-routes';
 
 interface SettingsTab {
   id: string;
@@ -816,27 +817,40 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
         settings.bookNotesEnabled = value;
         await save();
       }));
+    const routeStatus = createSpan();
+    const checkRoutes = (value: string) => {
+      try {
+        const routes = parseBookRoutes(value);
+        routeStatus.setText(routes.length ? '' : 'No routes: no book notes will be written.');
+      } catch (error) {
+        routeStatus.setText(this.getErrorMessage(error));
+      }
+    };
     new Setting(containerEl)
-      .setName('Book notes folder')
-      .setDesc('Vault-relative folder holding your book notes, searched including subfolders.')
-      .addText((text) => text.setValue(settings.bookNotesFolder).onChange(async (value) => {
-        settings.bookNotesFolder = value.trim();
-        await save();
-      }));
-    new Setting(containerEl)
-      .setName('Readwise categories')
-      .setDesc('Comma-separated categories routed to book notes, such as books, articles, or podcasts. Others only get their Readwise note.')
-      .addText((text) => text.setValue(settings.bookNotesCategories).onChange(async (value) => {
-        settings.bookNotesCategories = value;
-        await save();
-      }));
+      .setName('Routes')
+      .setDesc(createFragment((fragment) => {
+        fragment.appendText('One line per folder: Readwise categories, a colon, then the vault folder holding those notes (subfolders included). Categories without a route only get their Readwise note. Example: ');
+        const example = ['books', 'Inventory/Books'].join(': ');
+        fragment.createEl('code', { text: example });
+        fragment.createEl('br');
+        fragment.appendChild(routeStatus);
+      }))
+      .addTextArea((text) => {
+        text.setValue(settings.bookNoteRoutes).onChange(async (value) => {
+          settings.bookNoteRoutes = value;
+          checkRoutes(value);
+          await save();
+        });
+        text.inputEl.rows = 3;
+      });
+    checkRoutes(settings.bookNoteRoutes);
 
     new Setting(containerEl).setName('Matching').setHeading();
     new Setting(containerEl)
       .setName('Book ID property')
-      .setDesc('A book note whose property equals the Readwise book ID always matches that book.')
+      .setDesc('A book note whose property holds the Readwise book ID, as a number or a Readwise book review link, always matches that book.')
       .addText((text) => text.setValue(settings.bookNoteIdProperty).onChange(async (value) => {
-        settings.bookNoteIdProperty = value.trim() || 'readwise_book_id';
+        settings.bookNoteIdProperty = value.trim() || 'readwiseID';
         await save();
       }));
     new Setting(containerEl)
@@ -855,7 +869,7 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
       }));
     new Setting(containerEl)
       .setName('Create missing book notes')
-      .setDesc('Create a note in the book notes folder when nothing matches.')
+      .setDesc('Create a note in the route folder when nothing matches.')
       .addToggle((toggle) => toggle.setValue(settings.bookNoteCreateMissing).onChange(async (value) => {
         settings.bookNoteCreateMissing = value;
         await save();
@@ -871,7 +885,7 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
         }));
       new Setting(containerEl)
         .setName('New book note template')
-        .setDesc(variables('Initial contents, including YAML.', 'title, author, category, cover_image_url, source_url, readwise_url, book_id, book'))
+        .setDesc(variables('Initial contents, including YAML. For the current date use now with the date filter.', 'title, author, category, cover_image_url, source_url, readwise_url, book_id, book, now'))
         .addTextArea((text) => {
           text.setValue(settings.bookNoteNewTemplate).onChange(async (value) => {
             settings.bookNoteNewTemplate = value;
@@ -887,6 +901,35 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
       .setDesc('Leave the document note out of the Readwise note when a book note receives it.')
       .addToggle((toggle) => toggle.setValue(settings.bookNoteDocumentNoteOnly).onChange(async (value) => {
         settings.bookNoteDocumentNoteOnly = value;
+        await save();
+      }));
+    new Setting(containerEl)
+      .setName('Where to add the section')
+      .setDesc('Applies when a note has no Readwise section yet. After that, the section stays wherever you move it.')
+      .addDropdown((dropdown) => dropdown
+        .addOption('append', 'End of the note')
+        .addOption('prepend', 'Top of the note, below properties')
+        .addOption('heading', 'Below a heading')
+        .setValue(settings.bookNotePlacement)
+        .onChange(async (value) => {
+          settings.bookNotePlacement = value as PluginSettings['bookNotePlacement'];
+          await save();
+          this.display();
+        }));
+    if (settings.bookNotePlacement === 'heading') {
+      new Setting(containerEl)
+        .setName('Heading')
+        .setDesc('The section goes directly below this heading. A note without it gets the heading added at the end.')
+        .addText((text) => text.setValue(settings.bookNotePlacementHeading).onChange(async (value) => {
+          settings.bookNotePlacementHeading = value.trim();
+          await save();
+        }));
+    }
+    new Setting(containerEl)
+      .setName('Highlight block ID')
+      .setDesc(variables('Block ID that embeds point at, matching the ^ marker in your highlight template.', '{{ id }} (default) or rw{{ id }}H'))
+      .addText((text) => text.setValue(settings.bookNoteBlockId).onChange(async (value) => {
+        settings.bookNoteBlockId = value.trim() || '{{ id }}';
         await save();
       }));
     new Setting(containerEl)
@@ -1130,6 +1173,29 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
           await this.ctx.saveAndApplySettings();
         })
       );
+
+    new Setting(containerEl)
+      .setName('Filter highlights by tag')
+      .setDesc('Include keeps only highlights with one of the tags; exclude drops them. A highlight that later gains or loses a tag appears or disappears at the next sync of its book. An unsent comment edit stops that removal until you send it.')
+      .addDropdown((dropdown) => dropdown
+        .addOption('off', 'Off')
+        .addOption('include', 'Only highlights with these tags')
+        .addOption('exclude', 'Skip highlights with these tags')
+        .setValue(this.ctx.settings.highlightTagFilter)
+        .onChange(async (value) => {
+          this.ctx.settings.highlightTagFilter = value as PluginSettings['highlightTagFilter'];
+          await this.ctx.saveAndApplySettings();
+          this.display();
+        }));
+    if (this.ctx.settings.highlightTagFilter !== 'off') {
+      new Setting(containerEl)
+        .setName('Highlight tags')
+        .setDesc('Comma-separated Readwise highlight tags, ignoring case.')
+        .addText((text) => text.setValue(this.ctx.settings.highlightFilterTags).onChange(async (value) => {
+          this.ctx.settings.highlightFilterTags = value;
+          await this.ctx.saveAndApplySettings();
+        }));
+    }
 
     new Setting(containerEl)
       .setName('Sync highlights with notes only')
@@ -1475,7 +1541,7 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
       new Setting(containerEl)
         .setClass('indent')
         .setName('Log body template')
-        .setDesc('Nunjucks variables: date, time, summary, report.counts, report.events, items.')
+        .setDesc('Nunjucks variables: date, time, summary, report.counts, report.events (action, path, detail), items.')
         .addTextArea((text) => text.setValue(this.ctx.settings.logBodyTemplate).onChange(async (value) => {
           this.ctx.settings.logBodyTemplate = value;
           await this.ctx.saveAndApplySettings();

@@ -373,6 +373,17 @@ export class Controller {
       this.ctx.syncLock.release('folder-sync');
     }
   }
+  /** Fetches and writes only the books whose last write failed. */
+  public async retryFailed(): Promise<void> {
+    const ids = [...this.ctx.settings.failedBookIds];
+    if (!ids.length) {
+      this.ctx.notice('Readwise: No failed items to retry.');
+      return;
+    }
+    this.ctx.notice(`Readwise: Retrying ${ids.length} failed book${ids.length === 1 ? '' : 's'}...`);
+    await this.updateMultipleNotes(ids);
+  }
+
   /**
    * Iteratively renames files in the Readwise folder.
    * @param folder - The folder to iterate through

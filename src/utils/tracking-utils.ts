@@ -1,5 +1,6 @@
 import type { App, TFile } from 'obsidian';
 import { READWISE_REVIEW_URL_BASE } from 'src/constants';
+import { inBookNoteFolder } from 'services/book-routes';
 import type { PluginSettings } from 'types/settings';
 
 /**
@@ -15,6 +16,8 @@ export function isTrackedReadwiseNote(file: TFile, app: App, settings: PluginSet
   if (!file) {
     return false;
   }
+  // Book notes share the ID property name but are never Readwise notes, even with "Track across vault".
+  if (inBookNoteFolder(file.path, settings)) return false;
   const trackingProperty = settings.trackingProperty;
   const fileCache = app.metadataCache.getFileCache(file);
   const frontmatterValue: unknown = fileCache?.frontmatter?.[trackingProperty];

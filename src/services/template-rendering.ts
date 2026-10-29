@@ -7,7 +7,7 @@ import { escapeMetadata } from 'utils/metadata-escape-utils';
 
 type RenderSettings = Pick<
   PluginSettings,
-  'highlightSortByLocation' | 'highlightSortOldestToNewest' | 'highlightDiscard' | 'syncNotesOnly'
+  'highlightSortByLocation' | 'highlightSortOldestToNewest' | 'highlightDiscard' | 'syncNotesOnly' | 'highlightTagFilter' | 'highlightFilterTags'
 >;
 
 export class TemplateSourceLoader extends Loader implements ILoader {
@@ -108,10 +108,16 @@ export function formatTags(tags: Tag[], nohash = false, q = ''): string {
 }
 
 export function filterHighlights(highlights: Highlight[], settings: RenderSettings): Highlight[] {
+  const mode = settings.highlightTagFilter ?? 'off';
+  const selected = new Set((settings.highlightFilterTags ?? '').split(',').map((tag) => tag.trim().toLowerCase()).filter(Boolean));
   return highlights.filter((highlight) => {
     if (settings.syncNotesOnly && !highlight.note) return false;
     if (highlight.is_deleted) return false;
     if (settings.highlightDiscard && highlight.is_discard) return false;
+    if (mode !== 'off' && selected.size) {
+      const tagged = (highlight.tags ?? []).some((tag) => selected.has(tag.name.trim().toLowerCase()));
+      if (mode === 'include' ? !tagged : tagged) return false;
+    }
     return true;
   });
 }

@@ -1,6 +1,6 @@
 import { requestUrl, type TFile } from 'obsidian';
 import type { PluginContext } from 'types/plugin-context';
-import { markSent, readEditableNotes, type EditableNote } from './writeback-sections';
+import { hasUnsentEdit, markSent, readEditableNotes, type EditableNote } from './writeback-sections';
 
 interface PendingNote { note: EditableNote; remote: string; url: string; body: Record<string, string> }
 
@@ -34,32 +34,66 @@ async function readRemote(ctx: PluginContext, note: EditableNote, readerId: stri
   return { note, remote: data.note, url, body: { note: note.text } };
 }
 
-export async function sendEditedNotes(ctx: PluginContext, file: TFile, confirm: (items: string[]) => Promise<boolean>): Promise<number> {
+interface EditedCopy { file: TFile; note: EditableNote; readerId?: string }
+
+async function editedCopies(ctx: PluginContext, files: TFile[]): Promise<EditedCopy[]> {
+  const copies: EditedCopy[] = [];
+  for (const file of files) {
+    const content = await ctx.app.vault.cachedRead(file);
+    if (!content.includes('<!-- readwise-sync:note:')) continue;
+    const readerId: unknown = ctx.app.metadataCache.getFileCache(file)?.frontmatter?.reader_id;
+    for (const note of readEditableNotes(content).filter(hasUnsentEdit)) {
+      copies.push({ file, note, readerId: typeof readerId === 'string' ? readerId : undefined });
+    }
+  }
+  return copies;
+}
+
+/** Markdown files holding at least one unsent writable note. */
+export async function filesWithEditedNotes(ctx: PluginContext): Promise<TFile[]> {
+  const copies = await editedCopies(ctx, ctx.app.vault.getMarkdownFiles());
+  return [...new Set(copies.map((copy) => copy.file))];
+}
+
+/**
+ * Sends unsent edits from the given files. The same highlight edited in several files (a book note and its
+ * Readwise note) is sent once when the edits agree, and refused when they differ.
+ */
+export async function sendEditedNotes(ctx: PluginContext, files: TFile[], confirm: (items: string[]) => Promise<boolean>): Promise<number> {
   const token = ctx.settings.apiToken;
   if (!token) throw new Error('An API token is required for write-back.');
-  const content = await ctx.app.vault.cachedRead(file);
-  const changed = readEditableNotes(content).filter((note) => note.text.trim() !== note.baseline.trim());
-  if (!changed.length) return 0;
-  const readerId: unknown = ctx.app.metadataCache.getFileCache(file)?.frontmatter?.reader_id;
-  const pending: PendingNote[] = [];
-  for (const note of changed) {
+  const groups = new Map<string, EditedCopy[]>();
+  for (const copy of await editedCopies(ctx, files)) {
+    const key = copy.note.target === 'reader' ? `reader:${copy.readerId ?? copy.file.path}` : copy.note.target;
+    groups.set(key, [...(groups.get(key) ?? []), copy]);
+  }
+  if (!groups.size) return 0;
+  const pending: { item: PendingNote; copies: EditedCopy[] }[] = [];
+  for (const copies of groups.values()) {
+    const [first] = copies;
+    const { note } = first;
     if (note.target === 'reader' && !ctx.settings.writebackReaderNotes) throw new Error('Reader note write-back is disabled.');
     if (note.target !== 'reader' && !ctx.settings.writebackHighlightNotes) throw new Error('Highlight note write-back is disabled.');
-    const item = await readRemote(ctx, note, typeof readerId === 'string' ? readerId : undefined);
-    if (item.remote.trim() !== note.baseline.trim()) {
+    const differing = copies.find((copy) => copy.note.text.trim() !== note.text.trim());
+    if (differing) {
+      throw new Error(`${note.target} was edited differently in ${first.file.path} and ${differing.file.path}. Make them match first.`);
+    }
+    const item = await readRemote(ctx, note, first.readerId);
+    if (copies.some((copy) => item.remote.trim() !== copy.note.baseline.trim())) {
       throw new Error(`${note.target} changed in Readwise since it was imported. Review the remote note before sending.`);
     }
-    pending.push(item);
+    pending.push({ item, copies });
   }
-  if (!(await confirm(pending.map(({ note, remote }) => `${note.target}\nFrom:\n${remote || '(empty)'}\n\nTo:\n${note.text || '(empty)'}`)))) return 0;
+  if (!(await confirm(pending.map(({ item: { note, remote }, copies }) =>
+    `${note.target} (${copies.map((copy) => copy.file.path).join(', ')})\nFrom:\n${remote || '(empty)'}\n\nTo:\n${note.text || '(empty)'}`)))) return 0;
 
   let sent = 0;
-  for (const item of pending) {
+  for (const { item, copies } of pending) {
     const response = await requestUrl({ url: item.url, method: 'PATCH',
       headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(item.body), throw: false });
     if (response.status !== 200) throw new Error(`Write-back failed for ${item.note.target} (HTTP ${response.status}). ${sent} notes were sent before this failure.`);
-    await ctx.app.vault.process(file, (current) => markSent(current, item.note.target, item.note.text));
+    for (const copy of copies) await ctx.app.vault.process(copy.file, (current) => markSent(current, item.note.target, item.note.text));
     sent++;
   }
   return sent;

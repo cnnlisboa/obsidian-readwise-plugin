@@ -79,8 +79,8 @@ function vault(initial: Record<string, { text: string; frontmatter?: Record<stri
 
 function context(app: unknown, settings: Partial<PluginSettings> = {}): PluginContext {
   return {
-    settings: { ...DEFAULT_SETTINGS, bookNotesEnabled: true, bookNotesFolder: 'Inventory/Books', ...settings },
-    app, logger: { debug: jest.fn(), error: jest.fn(), warn: jest.fn() },
+    settings: { ...DEFAULT_SETTINGS, bookNotesEnabled: true, bookNoteRoutes: 'books: Inventory/Books', ...settings },
+    app, logger: { debug: jest.fn(), error: jest.fn(), warn: jest.fn() }, saveAndApplySettings: jest.fn(async () => undefined),
   } as unknown as PluginContext;
 }
 
@@ -90,9 +90,8 @@ const library = (...books: Export[]): Library => ({
 
 function links(app: ReturnType<typeof vault>['app']): BookLinkResolver {
   return {
-    mirror: () => app.vault.getFileByPath('Readwise Sync/Books/100M Offers.md'),
+    mirror: () => (app.vault.getFileByPath('Readwise Sync/Books/100M Offers.md') ? 'Readwise Sync/Books/100M Offers' : null),
     atom: () => null,
-    linktext: (file) => file.path.replace(/\.md$/, ''),
   };
 }
 
@@ -104,8 +103,8 @@ describe('Phase 4 book notes', () => {
   it('matches by ID first and by filename without the author, never claiming a note bound to another book', () => {
     const { app } = vault({
       'Inventory/Books/100M Offers (Alex Hormozi).md': { text: '' },
-      'Inventory/Books/Other.md': { text: '', frontmatter: { readwise_book_id: 99, aliases: ['$100M Offers'] } },
-      'Inventory/Books/Bound.md': { text: '', frontmatter: { readwise_book_id: 7 } },
+      'Inventory/Books/Other.md': { text: '', frontmatter: { readwiseID: 99, aliases: ['$100M Offers'] } },
+      'Inventory/Books/Bound.md': { text: '', frontmatter: { readwiseID: 7 } },
     });
     const index = new BookNoteIndex(context(app));
     expect(index.find(book()).file?.path).toBe('Inventory/Books/Bound.md');
@@ -130,8 +129,8 @@ describe('Phase 4 book notes', () => {
     });
     const ctx = context(app);
     const events = await syncBookNotes(ctx, env(), library(book()), new BookNoteIndex(ctx), links(app));
-    expect(events).toEqual([{ action: 'updated', path }]);
-    expect(meta.get(path)).toMatchObject({ readwise_book_id: 7 });
+    expect(events).toEqual([{ action: 'updated', path, bookId: 7 }]);
+    expect(meta.get(path)).toMatchObject({ readwiseID: 7 });
     const text = files.get(path) ?? '';
     expect(text.startsWith('---\ntags: book\n---\n\nMy own review.\n\n<!-- readwise-sync:book:start -->')).toBe(true);
     expect(text).toContain('Why I read it');
@@ -148,7 +147,7 @@ describe('Phase 4 book notes', () => {
 
   it('keeps a comment edited in the book note as a writable section until it is sent', async () => {
     const path = 'Inventory/Books/Bound.md';
-    const { app, files } = vault({ [path]: { text: 'Mine', frontmatter: { readwise_book_id: 7 } } });
+    const { app, files } = vault({ [path]: { text: 'Mine', frontmatter: { readwiseID: 7 } } });
     const ctx = context(app, { writebackHighlightNotes: true, bookNoteHighlightStyle: 'quote' });
     await syncBookNotes(ctx, env(), library(book()), new BookNoteIndex(ctx), links(app));
     expect(files.get(path)).toContain('> Make the offer better.');
@@ -168,10 +167,10 @@ describe('Phase 4 book notes', () => {
     const events = await syncBookNotes(ctx, env(), library(book({ title: 'Deep Work' }), book({ user_book_id: 9, category: 'articles' })),
       new BookNoteIndex(ctx), links(app));
     const path = 'Inventory/Books/Deep Work (Alex Hormozi).md';
-    expect(events).toEqual([{ action: 'created', path }]);
+    expect(events).toEqual([{ action: 'created', path, bookId: 7 }]);
     expect(files.get(path)).toContain('aliases:\n  - "Deep Work"');
     expect(files.get(path)).toContain(BOOK_START);
-    expect(meta.get(path)).toMatchObject({ readwise_book_id: 7 });
+    expect(meta.get(path)).toMatchObject({ readwiseID: 7 });
   });
 
   it('rejects a broken section rather than duplicating it', () => {
@@ -189,7 +188,7 @@ describe('Phase 4 Reader tag removal', () => {
     });
     const ctx = context(Object.assign(app, { vault: { ...app.vault, adapter: { exists: async () => true } } }),
       { apiToken: 'token', readerEnabled: true, readerTag: 'vault', readerTagRemoved: 'trash' });
-    const report = await syncReaderDocuments(ctx, env(), async () => true);
+    const report = await syncReaderDocuments(ctx, env(), false, async () => true);
     expect(report.counts.untagged).toBe(2);
     expect(objects.has('Readwise Sync/Reader/Plain a1.md')).toBe(false);
     expect(meta.get('Readwise Sync/Reader/Mine a2.md')).toMatchObject({ reader_tag_removed: true });

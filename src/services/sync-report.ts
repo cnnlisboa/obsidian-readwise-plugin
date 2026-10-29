@@ -4,6 +4,7 @@ export interface SyncEvent {
   action: SyncAction;
   path: string;
   detail?: string;
+  bookId?: number; // Readwise book behind the event, used to retry failures
 }
 
 export interface SyncReport {

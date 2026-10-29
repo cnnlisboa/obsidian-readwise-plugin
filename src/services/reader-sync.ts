@@ -120,23 +120,50 @@ async function linkHighlightBack(ctx: PluginContext, highlight: TFile, readerPat
   });
 }
 
-export async function syncReaderDocuments(ctx: PluginContext, env: ReadwiseEnvironment, confirm: (actions: string[]) => Promise<boolean>): Promise<SyncReport> {
-  const { apiToken, readerTag, readerEnabled } = ctx.settings;
+export async function syncReaderDocuments(
+  ctx: PluginContext,
+  env: ReadwiseEnvironment,
+  full: boolean,
+  confirm: (actions: string[]) => Promise<boolean>
+): Promise<SyncReport> {
+  const { apiToken, readerTag, readerEnabled, readerLastSync } = ctx.settings;
   if (!readerEnabled) return createSyncReport([]);
   if (!apiToken || !readerTag.trim()) throw new Error('Reader sync needs an API token and a document tag.');
   const folder = vaultFolder(ctx.settings.readerFolder);
-  const documents = await listTaggedReaderDocuments(apiToken, readerTag.trim());
+  const tag = readerTag.trim();
+  const startedAt = new Date().toISOString();
   const existing = new Map<string, TFile>();
   for (const file of ctx.app.vault.getMarkdownFiles().filter((item) => item.path.startsWith(`${folder}/`))) {
     const id: unknown = ctx.app.metadataCache.getFileCache(file)?.frontmatter?.reader_id;
     if (typeof id === 'string') existing.set(id, file);
   }
-  const tag = readerTag.trim();
-  const tagged = new Set(documents.map((document) => document.id));
+  // Combined notes copy the highlight note, which changes without the Reader document changing, so they always refresh.
+  const incremental = !full && Boolean(readerLastSync) && ctx.settings.readerOutputMode !== 'combined';
+  let taggedDocuments: ReaderDocument[];
+  let documents: ReaderDocument[];
+  if (!incremental || !readerLastSync) {
+    documents = await listTaggedReaderDocuments(apiToken, tag);
+    taggedDocuments = documents;
+  } else {
+    // The tag listing without content is cheap; content is fetched only for new or changed documents.
+    taggedDocuments = await listTaggedReaderDocuments(apiToken, tag, { content: false });
+    const updated = new Map((await listTaggedReaderDocuments(apiToken, tag, { content: true, updatedAfter: readerLastSync }))
+      .map((document) => [document.id, document]));
+    documents = [];
+    for (const document of taggedDocuments) {
+      const note = existing.get(document.id);
+      const stored: unknown = note ? ctx.app.metadataCache.getFileCache(note)?.frontmatter?.reader_updated_at : undefined;
+      if (!updated.has(document.id) && note && stored === document.updated_at) continue;
+      const withContent = updated.get(document.id) ?? (await listTaggedReaderDocuments(apiToken, '', { content: true, id: document.id }))[0];
+      if (withContent) documents.push(withContent);
+    }
+  }
+  const tagged = new Set(taggedDocuments.map((document) => document.id));
   // Only notes imported under the current tag are candidates, so changing the tag setting never trashes older imports.
   const untagged = [...existing.entries()].filter(([id, file]) =>
     !tagged.has(id) && ctx.app.metadataCache.getFileCache(file)?.frontmatter?.reader_sync_tag === tag).map(([, file]) => file);
   const actions = documents.map((document) => `${existing.has(document.id) ? 'Update' : 'Create'} ${notePath(folder, document, ctx)}`);
+  if (taggedDocuments.length > documents.length) actions.push(`${taggedDocuments.length - documents.length} unchanged documents skipped`);
   if (ctx.settings.readerTagRemoved !== 'keep') {
     actions.push(...untagged.map((file) => `${ctx.settings.readerTagRemoved === 'trash' ? 'Trash (if it has no local writing)' : 'Mark as untagged'} ${file.path}`));
   }
@@ -221,5 +248,7 @@ export async function syncReaderDocuments(ctx: PluginContext, env: ReadwiseEnvir
   }
   const report = createSyncReport(events);
   if (report.counts.failed > 0) throw new Error(`${report.counts.failed} Reader documents failed to sync. First: ${events.find((event) => event.action === 'failed')?.path}`);
+  ctx.settings.readerLastSync = startedAt;
+  await ctx.saveAndApplySettings();
   return report;
 }

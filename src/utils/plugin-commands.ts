@@ -3,6 +3,8 @@ import spacetime from 'spacetime';
 import { Controller } from '../services/controller';
 import type { PluginContext } from '../types/plugin-context';
 import type ReadwiseMirror from 'main';
+import { summarizeSyncReport } from '../services/sync-report';
+import { inspectNote, SyncInspectorModal } from '../ui/sync-inspector';
 import { humanReadableFormat } from './format-utils';
 
 function toErrorMessage(err: unknown): string {
@@ -33,13 +35,47 @@ export function getPluginCommands(ctr: Controller, ctx: PluginContext, plugin: R
       checkCallback: (checking) => {
         const file = ctx.app.workspace.getActiveFile();
         if (!(file instanceof TFile) || !file.path.endsWith('.md')) return false;
-        if (!checking) void plugin.sendEditedNotes(file).then((count) => {
+        if (!checking) void plugin.sendEditedNotes([file]).then((count) => {
           ctx.notice(`Readwise: Sent ${count} edited note${count === 1 ? '' : 's'}.`);
         }).catch((error: unknown) => {
           ctx.logger.error('Note write-back failed', error);
           ctx.notice(`Readwise: Note send failed. ${toErrorMessage(error)}`);
         });
         return true;
+      },
+    },
+    {
+      id: 'send-all-edited-notes',
+      name: 'Send all edited notes to Readwise',
+      callback: () => {
+        void plugin.sendEditedNotes().then((count) => {
+          ctx.notice(`Readwise: Sent ${count} edited note${count === 1 ? '' : 's'}.`);
+        }).catch((error: unknown) => {
+          ctx.logger.error('Note write-back failed', error);
+          ctx.notice(`Readwise: Note send failed. ${toErrorMessage(error)}`);
+        });
+      },
+    },
+    {
+      id: 'show-sync-info',
+      name: 'Show sync info for current note',
+      checkCallback: (checking) => {
+        const file = ctx.app.workspace.getActiveFile();
+        if (!(file instanceof TFile) || !file.path.endsWith('.md')) return false;
+        if (!checking) void ctx.app.vault.cachedRead(file).then((content) => {
+          new SyncInspectorModal(ctx.app, file, inspectNote(ctx, file, content)).open();
+        });
+        return true;
+      },
+    },
+    {
+      id: 'retry-failed-items',
+      name: 'Retry failed Readwise items',
+      callback: () => {
+        void ctr.retryFailed().catch((error: unknown) => {
+          ctx.logger.error('Retry failed', error);
+          ctx.notice(`Readwise: Retry failed. ${toErrorMessage(error)}`);
+        });
       },
     },
     {
@@ -63,7 +99,20 @@ export function getPluginCommands(ctr: Controller, ctx: PluginContext, plugin: R
       callback: async () => {
         try {
           const report = await plugin.syncReaderDocuments();
-          ctx.notice(`Reader: ${report.counts.created} created, ${report.counts.updated} updated.`);
+          ctx.notice(`Reader: ${summarizeSyncReport(report)}.`);
+        } catch (error) {
+          ctx.logger.error('Reader sync failed', error);
+          ctx.notice(`Reader: Sync failed. ${toErrorMessage(error)}`);
+        }
+      },
+    },
+    {
+      id: 'sync-reader-documents-full',
+      name: 'Sync tagged Reader documents (full refresh)',
+      callback: async () => {
+        try {
+          const report = await plugin.syncReaderDocuments(true);
+          ctx.notice(`Reader: ${summarizeSyncReport(report)}.`);
         } catch (error) {
           ctx.logger.error('Reader sync failed', error);
           ctx.notice(`Reader: Sync failed. ${toErrorMessage(error)}`);

@@ -229,7 +229,7 @@ export class DeduplicatingVaultWriter {
       try {
         await this.writePathGroup(groupFiles);
       } catch (error) {
-        this.syncEvents.push({ action: 'failed', path, detail: String(error) });
+        for (const file of groupFiles) this.syncEvents.push({ action: 'failed', path, detail: String(error), bookId: file.doc.id });
         throw error;
       }
     }
@@ -430,6 +430,22 @@ export class DeduplicatingVaultWriter {
         existingFrontmatter[key] = value;
       }
     });
+  }
+
+  /** The body text an update would write, and the properties it would change, without writing anything. */
+  public async previewUpdate(readwiseFile: BaseFile): Promise<{ before: string; after: string; properties: string[] }> {
+    if (!(readwiseFile.primary instanceof TFile)) throw new Error('Only existing notes can be previewed as updates.');
+    const file = readwiseFile.primary;
+    const data = await this.vault.cachedRead(file);
+    const info = getFrontMatterInfo(data);
+    const after = preserveLocalSection(data, readwiseFile.contents, this.ctx.settings.preserveLocalSection,
+      this.ctx.settings.localSectionMode, this.ctx.settings.localSectionHeading);
+    const existing = (this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}) as Record<string, unknown>;
+    const updated = this.frontmatterManager.getFrontmatter(readwiseFile, Object.keys(existing).length > 0);
+    const properties = [...updated.entries()]
+      .filter(([key, value]) => JSON.stringify(existing[key]) !== JSON.stringify(value))
+      .map(([key]) => key);
+    return { before: data.slice(info.exists ? info.contentStart : 0), after, properties };
   }
 
   private async validateLocalSection(existingFile: TFile, generated: string): Promise<void> {

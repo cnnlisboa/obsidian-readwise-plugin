@@ -11,11 +11,12 @@ import Logger from 'services/logger';
 import { buildReadwiseDocument } from 'services/readwise-document-mapper';
 import { ReadwiseEnvironment, ReadwiseLoader } from 'services/readwise-environment';
 import { BookNoteIndex, planBookNotes, syncBookNotes, type BookLinkResolver } from 'services/book-notes';
+import { diffLines } from 'services/line-diff';
 import { createSyncReport, type SyncEvent, type SyncReport } from 'services/sync-report';
 import { renderSyncLog, resolveSyncLogPath } from 'services/sync-log';
 import { syncReaderDocuments } from 'services/reader-sync';
 import { mergeEditableNotes } from 'services/writeback-sections';
-import { rebaseEditedNotes, sendEditedNotes } from 'services/writeback';
+import { filesWithEditedNotes, rebaseEditedNotes, sendEditedNotes } from 'services/writeback';
 import { filterHighlights, renderMarkdownTemplate } from 'services/template-rendering';
 import spacetime from 'spacetime';
 import { AUTHOR_SEPARATORS, DEFAULT_SETTINGS } from 'src/constants';
@@ -289,37 +290,65 @@ export default class ReadwiseMirror extends Plugin {
 
   public async confirmSyncPreview(library: Library): Promise<boolean> {
     if (!this.settings.previewSync || Object.keys(library.books).length === 0) return true;
-    this.deduplicatingVaultWriter.buildTrackedFileIndex();
+    // A dry run renders every note without renaming or writing, so the preview can show real text changes.
+    const files = await this.processReadwiseLibrary(library, true);
+    const changes: { title: string; diff: string }[] = [];
     const actions: string[] = [];
-    for (const book of Object.values(library.books)) {
-      const basename = this.getFileNameFromDoc(book);
-      const target = normalizePath(`${this.deduplicatingVaultWriter.getCategoryPath(book.category)}/${basename}.md`);
-      const existing = await this.deduplicatingVaultWriter.findExistingByHighlightsUrl({ readwise_url: book.readwise_url });
-      if (existing.length > 0) {
-        actions.push(`Update ${existing[0].path}`);
-        if (this.settings.enableFileNameUpdates && existing[0].path !== target) actions.push(`Rename ${existing[0].path} toward ${target}`);
-        for (const duplicate of existing.slice(1)) actions.push(`${this.settings.deleteDuplicates ? 'Trash' : 'Mark'} duplicate ${duplicate.path}`);
+    const planned = new Map<number, string>();
+    for (const file of files) {
+      const target = normalizePath(`${this.deduplicatingVaultWriter.getCategoryPath(file.doc.category)}/${file.basename}.md`);
+      if (file.primary instanceof TFile) {
+        planned.set(file.doc.id, file.primary.path);
+        const { before, after, properties } = await this.deduplicatingVaultWriter.previewUpdate(file);
+        const diff = diffLines(before, after);
+        if (!diff && !properties.length) continue;
+        actions.push(`Update ${file.primary.path}`);
+        changes.push({ title: file.primary.path, diff: `${properties.length ? `Properties: ${properties.join(', ')}\n` : ''}${diff}` });
+        if (this.settings.enableFileNameUpdates && file.primary.path !== target) actions.push(`Rename ${file.primary.path} toward ${target}`);
       } else {
-        actions.push(`${this.app.vault.getFileByPath(target) ? 'Update or create collision for' : 'Create'} ${target}`);
+        planned.set(file.doc.id, file.primary);
+        actions.push(`${this.app.vault.getFileByPath(file.primary) ? 'Update or create collision for' : 'Create'} ${file.primary}`);
+      }
+      for (const duplicate of file.duplicates) actions.push(`${this.settings.deleteDuplicates ? 'Trash' : 'Mark'} duplicate ${duplicate.path}`);
+    }
+    if (this.settings.bookNotesEnabled) {
+      for (const plan of await planBookNotes(this.ctx, this.env, library, this.bookLinks(planned))) {
+        if (plan.skipped) {
+          actions.push(`Skip "${plan.book.title}": ${plan.skipped}`);
+          continue;
+        }
+        const diff = diffLines(plan.before, plan.after);
+        if (!diff && !plan.stampId) continue;
+        actions.push(`${plan.create ? 'Create' : 'Update'} book note ${plan.path}`);
+        changes.push({ title: `Book note: ${plan.path}`,
+          diff: `${plan.stampId ? `Properties: ${this.settings.bookNoteIdProperty}\n` : ''}${diff}` });
       }
     }
-    if (this.settings.bookNotesEnabled) actions.push(...planBookNotes(new BookNoteIndex(this.ctx), this.env, this.settings, library));
+    if (!actions.length) return true;
     const prompt = createFragment((fragment) => {
-      fragment.createEl('p', { text: `${actions.length} planned document actions. Review before writing to the vault.` });
+      fragment.createEl('p', { text: `${actions.length} planned actions. Review before writing to the vault.` });
       if (this.settings.atomicHighlights) fragment.createEl('p', { text: 'Atomic highlight files may also be created or updated.' });
       if (this.settings.logFile) fragment.createEl('p', { text: `A sync entry will be appended to ${resolveSyncLogPath(this.settings)}.` });
       const list = fragment.createEl('ul');
       for (const action of actions.slice(0, 60)) list.createEl('li', { text: action });
       if (actions.length > 60) fragment.createEl('p', { text: `${actions.length - 60} more actions are not shown.` });
+      if (changes.length) fragment.createEl('h4', { text: 'Text changes' });
+      const diffs = fragment.createDiv({ cls: 'readwise-writeback-preview' });
+      for (const change of changes.slice(0, 40)) {
+        const details = diffs.createEl('details');
+        details.createEl('summary', { text: change.title });
+        details.createEl('pre', { text: change.diff || '(no body change)' });
+      }
+      if (changes.length > 40) fragment.createEl('p', { text: `${changes.length - 40} more changed notes are not shown.` });
     });
     return new Promise((resolve) => new ConfirmDialog(this.app, 'Preview Readwise sync', prompt, resolve).open());
   }
 
-  public async syncReaderDocuments(): Promise<SyncReport> {
+  public async syncReaderDocuments(full = false): Promise<SyncReport> {
     if (this.lock.isAcquired('reader-sync')) throw new Error('Reader sync is already running.');
     await this.lock.acquire('reader-sync');
     try {
-      const report = await syncReaderDocuments(this.ctx, this.env, async (actions) => {
+      const report = await syncReaderDocuments(this.ctx, this.env, full, async (actions) => {
         const prompt = createFragment((fragment) => {
           fragment.createEl('p', { text: `${actions.length} tagged Reader documents will be checked. Content and assets may be downloaded.` });
           const list = fragment.createEl('ul');
@@ -337,11 +366,13 @@ export default class ReadwiseMirror extends Plugin {
     }
   }
 
-  public async sendEditedNotes(file: TFile): Promise<number> {
+  /** Sends unsent note edits from the given files, or from the whole vault when files is omitted. */
+  public async sendEditedNotes(files?: TFile[]): Promise<number> {
     if (this.lock.isAcquired('writeback')) throw new Error('A note send is already running.');
     await this.lock.acquire('writeback');
     try {
-      return await sendEditedNotes(this.ctx, file, async (items) => {
+      const targets = files ?? await filesWithEditedNotes(this.ctx);
+      return await sendEditedNotes(this.ctx, targets, async (items) => {
         const prompt = createFragment((fragment) => {
           fragment.createEl('p', { text: `${items.length} edited notes will be sent to Readwise. Review each change.` });
           const list = fragment.createEl('div', { cls: 'readwise-writeback-preview' });
@@ -372,21 +403,57 @@ export default class ReadwiseMirror extends Plugin {
   }
 
   /** Writes the managed Readwise section into personal book notes. Run after the Readwise notes exist. */
-  public async writeBookNotes(library: Library): Promise<SyncEvent[]> {
-    if (!this.settings.bookNotesEnabled) return [];
+  /** Link text for book sections. planned maps book IDs to Readwise note paths that do not exist yet (previews). */
+  private bookLinks(planned = new Map<number, string>()): BookLinkResolver {
     const writer = this.deduplicatingVaultWriter;
     writer.buildTrackedFileIndex();
-    const links: BookLinkResolver = {
-      mirror: (book) => writer.getTrackedFiles(book.readwise_url)[0]
-        ?? this.app.vault.getFileByPath(normalizePath(`${writer.getCategoryPath(book.category)}/${this.getFileNameFromDoc(book)}.md`)),
-      atom: (highlight) => (this.settings.atomicHighlights ? writer.getTrackedFiles(highlight.readwise_url)[0] ?? null : null),
-      linktext: (file, sourcePath) => this.app.metadataCache.fileToLinktext(file, sourcePath, true),
+    const linktext = (file: TFile, sourcePath: string) => this.app.metadataCache.fileToLinktext(file, sourcePath, true);
+    return {
+      mirror: (book, sourcePath) => {
+        const file = writer.getTrackedFiles(book.readwise_url)[0]
+          ?? this.app.vault.getFileByPath(normalizePath(`${writer.getCategoryPath(book.category)}/${this.getFileNameFromDoc(book)}.md`));
+        if (file) return linktext(file, sourcePath);
+        return planned.get(book.user_book_id)?.replace(/\.md$/, '') ?? null;
+      },
+      atom: (highlight, sourcePath) => {
+        const file = this.settings.atomicHighlights ? writer.getTrackedFiles(highlight.readwise_url)[0] : undefined;
+        return file ? linktext(file, sourcePath) : null;
+      },
     };
-    return syncBookNotes(this.ctx, this.env, library, new BookNoteIndex(this.ctx), links);
+  }
+
+  /** Writes the managed Readwise section into personal book notes. Run after the Readwise notes exist. */
+  public async writeBookNotes(library: Library): Promise<SyncEvent[]> {
+    if (!this.settings.bookNotesEnabled) return [];
+    return syncBookNotes(this.ctx, this.env, library, new BookNoteIndex(this.ctx), this.bookLinks());
+  }
+
+  // Write a library of Readwise books to markdown files
+  /** Refuses to sync while the original Readwise Mirror plugin is enabled and writes to the same folder. */
+  private async assertNoMirrorConflict(): Promise<void> {
+    const plugins = (this.app as unknown as { plugins?: { enabledPlugins?: Set<string> } }).plugins;
+    if (!plugins?.enabledPlugins?.has('readwise-mirror')) return;
+    const path = normalizePath(`${this.app.vault.configDir}/plugins/readwise-mirror/data.json`);
+    if (!(await this.app.vault.adapter.exists(path))) return;
+    const data = JSON.parse(await this.app.vault.adapter.read(path)) as { baseFolderName?: unknown };
+    if (typeof data.baseFolderName === 'string' && normalizePath(data.baseFolderName) === normalizePath(this.settings.baseFolderName)) {
+      throw new Error('Readwise Mirror is enabled and writes to the same library folder. Disable it before syncing.');
+    }
+  }
+
+  /** Remembers which books failed, so "Retry failed Readwise items" can fetch just those. */
+  private async recordFailures(library: Library, events: SyncEvent[]): Promise<void> {
+    const attempted = new Set(Object.values(library.books).map((book) => book.user_book_id));
+    const failed = events.filter((event) => event.action === 'failed' && event.bookId !== undefined).map((event) => event.bookId);
+    const next = [...new Set([...this.settings.failedBookIds.filter((id) => !attempted.has(id)), ...failed])];
+    if (next.join() === this.settings.failedBookIds.join()) return;
+    this.settings.failedBookIds = next;
+    await this.saveData(this.settings);
   }
 
   // Write a library of Readwise books to markdown files
   public async writeLibraryToMarkdown(library: Library): Promise<SyncReport> {
+    await this.assertNoMirrorConflict();
     this.logger.group('Write Library to Markdown');
     try {
       await this.deduplicatingVaultWriter.createCategoryFolders(library.categories);
@@ -403,23 +470,28 @@ export default class ReadwiseMirror extends Plugin {
     if (readwiseFiles.length === 0) {
       this.logger.debug('No eligible Readwise files to process (all highlights filtered out). Skipping write.');
       this.logger.groupEnd();
+      await this.recordFailures(library, []);
       return createSyncReport([]);
     }
 
     // Process all files in batch
+    let bookEvents: SyncEvent[] = [];
     try {
       this.logger.time('process');
       const report = await this.deduplicatingVaultWriter.process(readwiseFiles);
       this.logger.timeEnd('process');
-      const bookEvents = await this.writeBookNotes(library);
+      bookEvents = await this.writeBookNotes(library);
       const failed = bookEvents.find((event) => event.action === 'failed');
       // A failed book note must keep the checkpoint where it is, so the book is fetched again next sync.
       if (failed) throw new Error(`Book note failed at ${failed.path}: ${failed.detail ?? 'unknown error'}`);
+      await this.recordFailures(library, []);
       return createSyncReport([...report.events, ...bookEvents]);
     } catch (err) {
       this.logger.error('Failed to process files batch', err);
-      const failed = this.deduplicatingVaultWriter.getLastSyncReport().events.find((event) => event.action === 'failed');
-      this.notify.notice(`Readwise: Sync write failed${failed ? ` at ${failed.path}` : ''}.`);
+      const events = [...this.deduplicatingVaultWriter.getLastSyncReport().events, ...bookEvents];
+      await this.recordFailures(library, events);
+      const failed = events.find((event) => event.action === 'failed');
+      this.notify.notice(`Readwise: Sync write failed${failed ? ` at ${failed.path}` : ''}. Run "Retry failed Readwise items" to try again.`);
       throw err;
     } finally {
       this.logger.groupEnd();
@@ -438,7 +510,7 @@ export default class ReadwiseMirror extends Plugin {
    * @param library - The Readwise library object containing books and their highlights.
    * @returns An array of `ReadwiseFile` objects, each containing the filename, document metadata, and file contents.
    */
-  private async processReadwiseLibrary(library: Library): Promise<BaseFile[]> {
+  private async processReadwiseLibrary(library: Library, dryRun = false): Promise<BaseFile[]> {
     if (this.settings.writebackHighlightNotes && !this.settings.trackFiles) {
       throw new Error('Highlight note write-back requires file tracking.');
     }
@@ -503,7 +575,7 @@ export default class ReadwiseMirror extends Plugin {
             `Found ${existingFiles.length} existing file(s) for '${title}' (${source_url}), using primary: ${primary.path}`
           );
 
-          if (this.settings.enableFileNameUpdates) {
+          if (this.settings.enableFileNameUpdates && !dryRun) {
             const hash = this.deduplicatingVaultWriter.generateShortHash(book.user_book_id);
 
             try {

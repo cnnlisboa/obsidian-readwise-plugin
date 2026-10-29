@@ -26,7 +26,7 @@ function headingSpec(heading: string): { level: number; title: string; line: str
   return { level: match[1].length, title: match[2].replace(/\s+#+\s*$/, '').trim(), line: heading.trim() };
 }
 
-function findHeadingSection(text: string, heading: string): HeadingSection | null {
+export function findHeadingSection(text: string, heading: string): HeadingSection | null {
   const { level, title } = headingSpec(heading);
   const lines = text.split('\n');
   let start = -1;

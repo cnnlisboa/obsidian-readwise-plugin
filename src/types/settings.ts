@@ -2,6 +2,8 @@ export interface PluginSettings {
   baseFolderName: string; // Base folder where synced notes will be stored
   apiToken: string | null; // Readwise API authentication token
   lastUpdated: string | null; // Timestamp of last successful sync
+  failedBookIds: number[]; // Readwise books whose last write failed, for the retry command
+  readerLastSync: string | null; // Start of the last successful incremental Reader sync
   autoSync: boolean; // Whether to automatically sync on startup
   previewSync: boolean; // Review planned vault changes before writing
   preserveLocalSection: boolean; // Keep the editable local section across syncs
@@ -18,8 +20,7 @@ export interface PluginSettings {
   readerYamlTemplate: string;
   readerTagRemoved: 'keep' | 'mark' | 'trash'; // What to do with a note whose Reader document lost the tag
   bookNotesEnabled: boolean; // Write a Readwise section into matching personal book notes
-  bookNotesFolder: string; // Folder containing personal book notes
-  bookNotesCategories: string; // Comma-separated Readwise categories routed to book notes
+  bookNoteRoutes: string; // Lines of "category, category: folder" routing books to personal notes
   bookNoteIdProperty: string; // Property linking a book note to its Readwise book ID
   bookNoteMatchByTitle: boolean; // Fall back to filename, alias, or title property matching
   bookNoteStampId: boolean; // Record the Readwise book ID on a note matched by title
@@ -28,12 +29,17 @@ export interface PluginSettings {
   bookNoteNewTemplate: string; // Initial contents for created book notes
   bookNoteSectionTemplate: string; // Managed Readwise section inside the book note
   bookNoteHighlightStyle: 'embed' | 'quote' | 'link';
+  bookNoteBlockId: string; // Nunjucks template for the highlight block ID that embeds point at
+  bookNotePlacement: 'append' | 'prepend' | 'heading'; // Where a new Readwise section goes
+  bookNotePlacementHeading: string;
   bookNoteDocumentNoteOnly: boolean; // Omit the document note from the Readwise note when a book note receives it
   writebackReaderNotes: boolean;
   writebackHighlightNotes: boolean;
   highlightSortOldestToNewest: boolean; // Sort highlights chronologically from oldest to newest
   highlightSortByLocation: boolean; // Sort highlights by their location in the document
   highlightDiscard: boolean; // Filter out discarded highlights
+  highlightTagFilter: 'off' | 'include' | 'exclude'; // Filter highlights by their Readwise tags
+  highlightFilterTags: string; // Comma-separated highlight tags for the filter
   syncNotesOnly: boolean; // Only sync highlights that have notes attached
   colonSubstitute: string; // String to replace colons in filenames
   logFile: boolean; // Whether to save sync logs to a file

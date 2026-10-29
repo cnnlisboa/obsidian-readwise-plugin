@@ -7,7 +7,7 @@ import { filterHighlights, formatDate, formatTags, sortHighlights } from './temp
 
 type MapperSettings = Pick<
   PluginSettings,
-  'highlightSortByLocation' | 'highlightSortOldestToNewest' | 'highlightDiscard' | 'syncNotesOnly'
+  'highlightSortByLocation' | 'highlightSortOldestToNewest' | 'highlightDiscard' | 'syncNotesOnly' | 'highlightTagFilter' | 'highlightFilterTags'
 >;
 
 export function parseAuthors(authorString?: string): string[] {

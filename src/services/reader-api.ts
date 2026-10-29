@@ -23,13 +23,27 @@ interface ReaderPage {
   nextPageCursor: string | null;
 }
 
-export async function listTaggedReaderDocuments(token: string, tag: string): Promise<ReaderDocument[]> {
+export interface ReaderListOptions {
+  /** Include html_content and raw_source_url. Without them a page is much smaller. */
+  content?: boolean;
+  updatedAfter?: string;
+  id?: string;
+}
+
+export async function listTaggedReaderDocuments(token: string, tag: string, options: ReaderListOptions = { content: true }): Promise<ReaderDocument[]> {
   const results: ReaderDocument[] = [];
   let cursor: string | null = null;
   const seenCursors = new Set<string>();
 
   do {
-    const query = new URLSearchParams({ tag, withHtmlContent: 'true', withRawSourceUrl: 'true', limit: '100' });
+    const query = new URLSearchParams({ limit: '100' });
+    if (tag) query.set('tag', tag);
+    if (options.content) {
+      query.set('withHtmlContent', 'true');
+      query.set('withRawSourceUrl', 'true');
+    }
+    if (options.updatedAfter) query.set('updatedAfter', options.updatedAfter);
+    if (options.id) query.set('id', options.id);
     if (cursor) query.set('pageCursor', cursor);
     let retries = 0;
     while (true) {

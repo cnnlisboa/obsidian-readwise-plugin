@@ -35,7 +35,7 @@ describe('Phase 5 explicit note write-back', () => {
     api
       .mockResolvedValueOnce({ status: 200, json: { results: [{ id: 'reader123', notes: 'Remote original' }] } } as never)
       .mockResolvedValueOnce({ status: 200, json: { id: 'reader123' } } as never);
-    expect(await sendEditedNotes(ctx, file, async () => true)).toBe(1);
+    expect(await sendEditedNotes(ctx, [file], async () => true)).toBe(1);
     expect(api.mock.calls[1][0]).toMatchObject({ method: 'PATCH', body: JSON.stringify({ notes: 'Local revision' }) });
     expect(readEditableNotes(current())[0].baseline).toBe('Local revision');
   });
@@ -46,7 +46,7 @@ describe('Phase 5 explicit note write-back', () => {
     const edited = first.replace('Original\n<!-- readwise-sync:note:highlight-12:end', 'Local edit\n<!-- readwise-sync:note:highlight-12:end');
     const { ctx, file } = context(edited);
     api.mockResolvedValueOnce({ status: 200, json: { id: 12, note: 'Remote edit' } } as never);
-    await expect(sendEditedNotes(ctx, file, async () => true)).rejects.toThrow('changed in Readwise');
+    await expect(sendEditedNotes(ctx, [file], async () => true)).rejects.toThrow('changed in Readwise');
     expect(api).toHaveBeenCalledTimes(1);
   });
 
@@ -67,13 +67,13 @@ describe('Phase 5 explicit note write-back', () => {
     const edited = first.replace('Original\n<!-- readwise-sync:note:highlight-12:end', 'Local edit\n<!-- readwise-sync:note:highlight-12:end');
     const { ctx, file, current } = context(edited);
     api.mockResolvedValueOnce({ status: 200, json: { id: 12, note: 'Original' } } as never);
-    expect(await sendEditedNotes(ctx, file, async () => false)).toBe(0);
+    expect(await sendEditedNotes(ctx, [file], async () => false)).toBe(0);
     expect(api).toHaveBeenCalledTimes(1);
 
     api
       .mockResolvedValueOnce({ status: 200, json: { id: 12, note: 'Original' } } as never)
       .mockResolvedValueOnce({ status: 200, json: { id: 12, note: 'Local edit' } } as never);
-    expect(await sendEditedNotes(ctx, file, async () => true)).toBe(1);
+    expect(await sendEditedNotes(ctx, [file], async () => true)).toBe(1);
     expect(api.mock.calls[2][0]).toMatchObject({ method: 'PATCH', body: JSON.stringify({ note: 'Local edit' }) });
     expect(readEditableNotes(current())[0].baseline).toBe('Local edit');
   });

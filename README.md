@@ -18,19 +18,23 @@ The first time this plugin is ran, it will do a full sync, downloading all conte
 
 This fork installs as `readwise-sync` alongside the original plugin. Its default note folder is `Readwise Sync`, and startup sync is off for a fresh installation.
 
-In General settings, turn on **Preview sync changes** to review planned document actions before a library sync. **Preserve local writing** can use comment markers or a configurable Markdown heading; existing marked text migrates to the heading when you switch modes. The marker name remains stable for existing notes. The sync log has an optional vault-relative path override and Nunjucks templates for its title and body.
+In General settings, turn on **Preview sync changes** to review planned actions and the actual text changes before a library sync. **Preserve local writing** can use comment markers or a configurable Markdown heading; existing marked text migrates to the heading when you switch modes. The marker name remains stable for existing notes. The sync log has an optional vault-relative path override and Nunjucks templates for its title and body.
 
 The Reader tab can sync full documents selected by an exact Reader tag, including their document notes and available content assets. It has separate body and YAML templates, so imported documents can use their own tags and properties. It can link matching Readwise highlight notes or copy their current body into the document note. See [Reader document sync](docs/reader-sync.md) for setup, matching rules, and limits.
 
 Optional [note write-back](docs/note-writeback.md) adds editable sections for Reader document notes and Readwise highlight notes. Sending changes is a separate, confirmed command.
 
-The Book notes tab writes a Readwise section into your own book notes: the document note, highlight embeds, and each comment below its highlight. Matching uses a book ID property or the title; your text outside the section is never changed. See [Book notes](docs/book-notes.md).
+The Book notes tab writes a Readwise section into your own book notes: the document note, highlight embeds, and each comment below its highlight. Routes send each Readwise category to its own folder of notes. Matching uses a book ID property or the title; your text outside the section is never changed. See [Book notes](docs/book-notes.md). Moving from the original plugin is covered in [Migrating from Readwise Mirror](docs/migration.md).
 
 ## Commands
 
 - `Sync new highlights`: Download all new highlights since previous update
-- `Sync tagged Reader documents`: Download full documents selected by the Reader tag
-- `Send edited notes to Readwise`: Send changed writable note sections after a remote conflict check
+- `Sync tagged Reader documents`: Download new and changed documents selected by the Reader tag
+- `Sync tagged Reader documents (full refresh)`: Re-download and re-render every tagged document, such as after a template change
+- `Send edited notes to Readwise`: Send changed writable note sections in the current note after a remote conflict check
+- `Send all edited notes to Readwise`: Send every unsent writable note section in the vault, once per highlight
+- `Show sync info for current note`: Show the note's Readwise and Reader IDs, related notes, unsent edits, and sync state
+- `Retry failed Readwise items`: Fetch and write again only the books whose last write failed
 - `Review note write-back conflicts`: Compare remote changes and update local baselines without sending
 - `Test Readwise API key`: Ensure the Access Token works
 - `Delete Readwise library`: Remove the Readwise library file folder from the Obsidian vault

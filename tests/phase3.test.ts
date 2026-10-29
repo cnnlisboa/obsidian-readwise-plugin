@@ -80,8 +80,9 @@ describe('Phase 3 Reader ingestion', () => {
       app: { vault, metadataCache: { getFileCache: (file: TFile): { frontmatter: { reader_id: string } } | null =>
         file.path.includes('doc123') ? { frontmatter: { reader_id: 'doc123' } } : null }, fileManager: {} },
       logger: { error: jest.fn(), warn: jest.fn() },
+      saveAndApplySettings: jest.fn(async () => undefined),
     } as unknown as PluginContext;
-    const report = await syncReaderDocuments(ctx, new Environment() as ReadwiseEnvironment, async () => true);
+    const report = await syncReaderDocuments(ctx, new Environment() as ReadwiseEnvironment, false, async () => true);
     const readerPath = 'Readwise Sync/Reader/Article doc123.md';
     expect(report.counts.created).toBe(1);
     expect(files.get(readerPath)).toContain('Full text.');
@@ -95,7 +96,7 @@ describe('Phase 3 Reader ingestion', () => {
 
     files.set(highlight.path, `${files.get(highlight.path)}\n<!-- readwise-obsidian:local:start -->\nMy note\n<!-- readwise-obsidian:local:end -->`);
     ctx.settings.readerOutputMode = 'combined';
-    const combined = await syncReaderDocuments(ctx, new Environment() as ReadwiseEnvironment, async () => true);
+    const combined = await syncReaderDocuments(ctx, new Environment() as ReadwiseEnvironment, false, async () => true);
     expect(combined.counts.updated).toBe(1);
     expect(files.get(readerPath)).toContain('A highlight');
     expect(files.get(readerPath)).toContain('My note');

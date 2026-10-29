@@ -16,6 +16,8 @@ export interface PluginSettings {
   readerDownloadSourceFiles: boolean;
   readerDocumentTemplate: string;
   readerYamlTemplate: string;
+  writebackReaderNotes: boolean;
+  writebackHighlightNotes: boolean;
   highlightSortOldestToNewest: boolean; // Sort highlights chronologically from oldest to newest
   highlightSortByLocation: boolean; // Sort highlights by their location in the document
   highlightDiscard: boolean; // Filter out discarded highlights

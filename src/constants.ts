@@ -22,6 +22,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   readerDownloadSourceFiles: true,
   readerDocumentTemplate: '# {{ title }}\n\n{% if author %}By {{ author }}\n\n{% endif %}{% if notes %}## Document note\n\n{{ notes }}\n\n{% endif %}## Content\n\n{{ content }}\n\n{% if highlights %}## Highlights\n\n{{ highlights }}{% endif %}',
   readerYamlTemplate: 'tags:\n  - readwise/reader',
+  writebackReaderNotes: false,
+  writebackHighlightNotes: false,
   highlightSortOldestToNewest: true,
   highlightSortByLocation: true,
   highlightDiscard: false,

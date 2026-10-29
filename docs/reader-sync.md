@@ -37,8 +37,9 @@ In linked mode, the document contains a wiki link to the highlights note and the
 
 ## API and sync limits
 
-The [Reader API](https://readwise.io/reader_api) limits document LIST requests to 20 per minute and returns raw source URLs that expire after one hour. The plugin pages through the full tag selection and retries HTTP 429 responses using `Retry-After`. Large libraries and asset downloads can take time. Reader note edits in Obsidian are not written back to Readwise yet; write-back is planned for Phase 5. The [Readwise changelog](https://docs.readwise.io/changelog) records current API changes.
+The [Reader API](https://readwise.io/reader_api) limits document LIST requests to 20 per minute and returns raw source URLs that expire after one hour. The plugin pages through the full tag selection and retries HTTP 429 responses using `Retry-After`. Large libraries and asset downloads can take time. [Explicit note write-back](note-writeback.md) is available for Reader document notes. The [Readwise changelog](https://docs.readwise.io/changelog) records current API changes.
 
 ## Related
 
 - [README](../README.md) — Plugin overview and commands.
+- [Note write-back](note-writeback.md) — Send edited notes to Readwise.

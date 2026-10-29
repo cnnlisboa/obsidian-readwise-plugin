@@ -1,4 +1,4 @@
-import type { Command } from 'obsidian';
+import { type Command, TFile } from 'obsidian';
 import spacetime from 'spacetime';
 import { Controller } from '../services/controller';
 import type { PluginContext } from '../types/plugin-context';
@@ -27,6 +27,36 @@ function toErrorMessage(err: unknown): string {
  */
 export function getPluginCommands(ctr: Controller, ctx: PluginContext, plugin: ReadwiseMirror): Command[] {
   return [
+    {
+      id: 'send-edited-notes',
+      name: 'Send edited notes to Readwise',
+      checkCallback: (checking) => {
+        const file = ctx.app.workspace.getActiveFile();
+        if (!(file instanceof TFile) || !file.path.endsWith('.md')) return false;
+        if (!checking) void plugin.sendEditedNotes(file).then((count) => {
+          ctx.notice(`Readwise: Sent ${count} edited note${count === 1 ? '' : 's'}.`);
+        }).catch((error: unknown) => {
+          ctx.logger.error('Note write-back failed', error);
+          ctx.notice(`Readwise: Note send failed. ${toErrorMessage(error)}`);
+        });
+        return true;
+      },
+    },
+    {
+      id: 'review-note-conflicts',
+      name: 'Review note write-back conflicts',
+      checkCallback: (checking) => {
+        const file = ctx.app.workspace.getActiveFile();
+        if (!(file instanceof TFile) || !file.path.endsWith('.md')) return false;
+        if (!checking) void plugin.rebaseEditedNotes(file).then((count) => {
+          ctx.notice(`Readwise: Reviewed ${count} conflicting note${count === 1 ? '' : 's'}.`);
+        }).catch((error: unknown) => {
+          ctx.logger.error('Note conflict review failed', error);
+          ctx.notice(`Readwise: Conflict review failed. ${toErrorMessage(error)}`);
+        });
+        return true;
+      },
+    },
     {
       id: 'sync-reader-documents',
       name: 'Sync tagged Reader documents',

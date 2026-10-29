@@ -13,6 +13,8 @@ import { ReadwiseEnvironment, ReadwiseLoader } from 'services/readwise-environme
 import { createSyncReport, type SyncReport } from 'services/sync-report';
 import { renderSyncLog, resolveSyncLogPath } from 'services/sync-log';
 import { syncReaderDocuments } from 'services/reader-sync';
+import { mergeEditableNotes } from 'services/writeback-sections';
+import { rebaseEditedNotes, sendEditedNotes } from 'services/writeback';
 import { filterHighlights, renderMarkdownTemplate } from 'services/template-rendering';
 import spacetime from 'spacetime';
 import { AUTHOR_SEPARATORS, DEFAULT_SETTINGS } from 'src/constants';
@@ -341,6 +343,40 @@ export default class ReadwiseMirror extends Plugin {
     }
   }
 
+  public async sendEditedNotes(file: TFile): Promise<number> {
+    if (this.lock.isAcquired('writeback')) throw new Error('A note send is already running.');
+    await this.lock.acquire('writeback');
+    try {
+      return await sendEditedNotes(this.ctx, file, async (items) => {
+        const prompt = createFragment((fragment) => {
+          fragment.createEl('p', { text: `${items.length} edited notes will be sent to Readwise. Review each change.` });
+          const list = fragment.createEl('div', { cls: 'readwise-writeback-preview' });
+          for (const item of items) list.createEl('pre', { text: item });
+        });
+        return new Promise((resolve) => new ConfirmDialog(this.app, 'Send edited notes', prompt, resolve).open());
+      });
+    } finally {
+      this.lock.release('writeback');
+    }
+  }
+
+  public async rebaseEditedNotes(file: TFile): Promise<number> {
+    if (this.lock.isAcquired('writeback')) throw new Error('A note send is already running.');
+    await this.lock.acquire('writeback');
+    try {
+      return await rebaseEditedNotes(this.ctx, file, async (items) => {
+        const prompt = createFragment((fragment) => {
+          fragment.createEl('p', { text: 'Use the current remote notes as baselines while keeping your local edits? This does not send any notes.' });
+          const list = fragment.createEl('div', { cls: 'readwise-writeback-preview' });
+          for (const item of items) list.createEl('pre', { text: item });
+        });
+        return new Promise((resolve) => new ConfirmDialog(this.app, 'Review note conflicts', prompt, resolve).open());
+      });
+    } finally {
+      this.lock.release('writeback');
+    }
+  }
+
   // Write a library of Readwise books to markdown files
   public async writeLibraryToMarkdown(library: Library): Promise<SyncReport> {
     this.logger.group('Write Library to Markdown');
@@ -391,6 +427,9 @@ export default class ReadwiseMirror extends Plugin {
    * @returns An array of `ReadwiseFile` objects, each containing the filename, document metadata, and file contents.
    */
   private async processReadwiseLibrary(library: Library): Promise<BaseFile[]> {
+    if (this.settings.writebackHighlightNotes && !this.settings.trackFiles) {
+      throw new Error('Highlight note write-back requires file tracking.');
+    }
     const readwiseFiles: BaseFile[] = [];
     this.deduplicatingVaultWriter.buildTrackedFileIndex();
 
@@ -548,6 +587,13 @@ export default class ReadwiseMirror extends Plugin {
           readwiseFile.contents = _contents; // fall back to raw contents
         }
       }
+      const oldContents = readwiseFile.primary instanceof TFile ? await this.app.vault.cachedRead(readwiseFile.primary) : null;
+      readwiseFile.contents = mergeEditableNotes(oldContents, readwiseFile.contents,
+        this.settings.writebackHighlightNotes
+          ? filteredHighlights.filter((highlight) => !highlight.is_deleted).map((highlight) => ({
+            target: `highlight-${highlight.id}` as const, text: highlight.note ?? '',
+          }))
+          : []);
       readwiseFiles.push(readwiseFile);
     }
     return readwiseFiles;

@@ -116,3 +116,12 @@
   border-radius: 4px;
   overflow-x: auto;
 }
+.readwise-writeback-preview {
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.readwise-writeback-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

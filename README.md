@@ -22,10 +22,14 @@ In General settings, turn on **Preview sync changes** to review planned document
 
 The Reader tab can sync full documents selected by an exact Reader tag, including their document notes and available content assets. It has separate body and YAML templates, so imported documents can use their own tags and properties. It can link matching Readwise highlight notes or copy their current body into the document note. See [Reader document sync](docs/reader-sync.md) for setup, matching rules, and limits.
 
+Optional [note write-back](docs/note-writeback.md) adds editable sections for Reader document notes and Readwise highlight notes. Sending changes is a separate, confirmed command.
+
 ## Commands
 
 - `Sync new highlights`: Download all new highlights since previous update
 - `Sync tagged Reader documents`: Download full documents selected by the Reader tag
+- `Send edited notes to Readwise`: Send changed writable note sections after a remote conflict check
+- `Review note write-back conflicts`: Compare remote changes and update local baselines without sending
 - `Test Readwise API key`: Ensure the Access Token works
 - `Delete Readwise library`: Remove the Readwise library file folder from the Obsidian vault
 - `Download entire Readwise library (force)`: Forces a full download of all content from Readwise

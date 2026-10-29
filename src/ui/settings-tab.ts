@@ -674,6 +674,13 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
         await this.ctx.saveAndApplySettings();
       }));
     new Setting(containerEl)
+      .setName('Editable reader document notes')
+      .setDesc('Add a writable note section to imported reader documents. Changes are sent only with the command.')
+      .addToggle((toggle) => toggle.setValue(this.ctx.settings.writebackReaderNotes).onChange(async (value) => {
+        this.ctx.settings.writebackReaderNotes = value;
+        await this.ctx.saveAndApplySettings();
+      }));
+    new Setting(containerEl)
       .setName('Reader tag')
       .setDesc('Exact reader tag key to select documents. Leave blank to prevent reader sync.')
       .addText((text) => text.setValue(this.ctx.settings.readerTag).onChange(async (value) => {
@@ -778,6 +785,14 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
 
   private renderAtomicHighlightsSettings(containerEl: HTMLElement): void {
     new Setting(containerEl).setName('Atomic highlights').setHeading();
+
+    new Setting(containerEl)
+      .setName('Editable highlight notes')
+      .setDesc('Add a writable section for each Readwise highlight note. Requires file tracking; use the send command to write edits back.')
+      .addToggle((toggle) => toggle.setValue(this.ctx.settings.writebackHighlightNotes).setDisabled(!this.ctx.settings.trackFiles).onChange(async (value) => {
+        this.ctx.settings.writebackHighlightNotes = value;
+        await this.ctx.saveAndApplySettings();
+      }));
 
     // Add atomic highlights setting with tracking dependency
     new Setting(containerEl)

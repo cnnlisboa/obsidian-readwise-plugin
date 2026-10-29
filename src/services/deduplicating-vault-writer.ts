@@ -365,7 +365,8 @@ export class DeduplicatingVaultWriter {
           return existingNewFile;
         }
         this.ctx.logger.debug('Creating new file (with hash)', { doc: file.doc, ...fileOptions });
-        const newFile: TFile = await this.vault.create(newPath, preserveLocalSection(null, file.contents, this.ctx.settings.preserveLocalSection), fileOptions);
+        const newFile: TFile = await this.vault.create(newPath, preserveLocalSection(null, file.contents, this.ctx.settings.preserveLocalSection,
+          this.ctx.settings.localSectionMode, this.ctx.settings.localSectionHeading), fileOptions);
         await this.frontmatterWrite(newFile, frontmatter);
         this.syncEvents.push({ action: 'created', path: newFile.path });
         return newFile;
@@ -373,7 +374,8 @@ export class DeduplicatingVaultWriter {
 
       // If the file doesn't exist, create it
       this.ctx.logger.debug('Creating new file', { doc: file.doc, ...fileOptions });
-      const newFile: TFile = await this.vault.create(path, preserveLocalSection(null, file.contents, this.ctx.settings.preserveLocalSection), fileOptions);
+      const newFile: TFile = await this.vault.create(path, preserveLocalSection(null, file.contents, this.ctx.settings.preserveLocalSection,
+        this.ctx.settings.localSectionMode, this.ctx.settings.localSectionHeading), fileOptions);
       await this.frontmatterWrite(newFile, frontmatter);
       this.syncEvents.push({ action: 'created', path: newFile.path });
       return newFile;
@@ -426,7 +428,8 @@ export class DeduplicatingVaultWriter {
   }
 
   private async validateLocalSection(existingFile: TFile, generated: string): Promise<void> {
-    preserveLocalSection(await this.vault.cachedRead(existingFile), generated, this.ctx.settings.preserveLocalSection);
+    preserveLocalSection(await this.vault.cachedRead(existingFile), generated, this.ctx.settings.preserveLocalSection,
+      this.ctx.settings.localSectionMode, this.ctx.settings.localSectionHeading);
   }
 
   /**
@@ -442,9 +445,11 @@ export class DeduplicatingVaultWriter {
       (data) => {
         const fmi = getFrontMatterInfo(data);
         if (fmi?.exists) {
-          return `${data.slice(0, fmi.contentStart)}${preserveLocalSection(data, fileContents, this.ctx.settings.preserveLocalSection)}`;
+          return `${data.slice(0, fmi.contentStart)}${preserveLocalSection(data, fileContents, this.ctx.settings.preserveLocalSection,
+            this.ctx.settings.localSectionMode, this.ctx.settings.localSectionHeading)}`;
         }
-        return preserveLocalSection(data, fileContents, this.ctx.settings.preserveLocalSection);
+        return preserveLocalSection(data, fileContents, this.ctx.settings.preserveLocalSection,
+          this.ctx.settings.localSectionMode, this.ctx.settings.localSectionHeading);
       },
       fileOptions
     );

@@ -12,6 +12,7 @@ import { Controller } from 'services/controller';
 import { Atomizer } from 'services/atomizer';
 import ReadwiseApi, { TokenValidationError } from 'services/readwise-api';
 import { ReadwiseEnvironment, ReadwiseLoader } from 'services/readwise-environment';
+import { renderReaderFrontmatter } from 'services/reader-frontmatter';
 import { buildReadwiseDocument } from 'services/readwise-document-mapper';
 import { renderMarkdownTemplate } from 'services/template-rendering';
 import { DEFAULT_SETTINGS } from 'src/constants';
@@ -635,11 +636,32 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Preserve local writing')
-      .setDesc('Keep text between the local-section markers when synced notes are regenerated.')
+      .setDesc('Keep one local section when synced notes are regenerated.')
       .addToggle((toggle) => toggle.setValue(this.ctx.settings.preserveLocalSection).onChange(async (value) => {
         this.ctx.settings.preserveLocalSection = value;
         await this.ctx.saveAndApplySettings();
       }));
+    new Setting(containerEl)
+      .setName('Local writing boundary')
+      .setDesc('Choose comment markers or a Markdown heading for the section that survives sync.')
+      .addDropdown((dropdown) => dropdown
+        .addOption('markers', 'Comment markers')
+        .addOption('heading', 'Markdown heading')
+        .setValue(this.ctx.settings.localSectionMode)
+        .onChange(async (value) => {
+          this.ctx.settings.localSectionMode = value as 'markers' | 'heading';
+          await this.ctx.saveAndApplySettings();
+          this.display();
+        }));
+    if (this.ctx.settings.localSectionMode === 'heading') {
+      new Setting(containerEl)
+        .setName('Local writing heading')
+        .setDesc('Use a unique Markdown heading, such as ## my notes. Text below it survives until the next heading at the same or higher level.')
+        .addText((text) => text.setValue(this.ctx.settings.localSectionHeading).onChange(async (value) => {
+          this.ctx.settings.localSectionHeading = value;
+          await this.ctx.saveAndApplySettings();
+        }));
+    }
   }
 
   private renderReaderSettings(containerEl: HTMLElement): void {
@@ -723,6 +745,35 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
       });
     previewEl = containerEl.createEl('pre', { cls: 'readwise-template-preview' });
     updateReaderPreview(this.ctx.settings.readerDocumentTemplate);
+
+    const sampleReader = {
+      id: 'sample-reader-id', url: 'https://read.readwise.io/new/read/sample-reader-id',
+      source_url: 'https://example.com/article', title: 'Sample article', author: 'Sample author',
+      category: 'article', updated_at: '2026-10-29T00:00:00Z', tags: { sample: { name: 'Sample' } },
+      notes: 'A document note',
+    };
+    let yamlPreview: HTMLElement;
+    const updateYamlPreview = (template: string) => {
+      if (!yamlPreview) return;
+      try {
+        yamlPreview.setText(renderReaderFrontmatter(this.env, template, sampleReader, this.ctx.settings.readerTag || 'sample-tag').trim());
+      } catch (error) {
+        yamlPreview.setText(`Template error: ${this.getErrorMessage(error)}`);
+      }
+    };
+    new Setting(containerEl)
+      .setName('Document YAML template')
+      .setDesc('Set tags and other properties for imported reader notes. Tracking fields are added automatically. Available: reader_tag, tag_names, document, and reader document fields.')
+      .addTextArea((text) => {
+        text.setValue(this.ctx.settings.readerYamlTemplate).onChange(async (value) => {
+          this.ctx.settings.readerYamlTemplate = value;
+          await this.ctx.saveAndApplySettings();
+          updateYamlPreview(value);
+        });
+        text.inputEl.rows = 8;
+      });
+    yamlPreview = containerEl.createEl('pre', { cls: 'readwise-template-preview' });
+    updateYamlPreview(this.ctx.settings.readerYamlTemplate);
   }
 
   private renderAtomicHighlightsSettings(containerEl: HTMLElement): void {

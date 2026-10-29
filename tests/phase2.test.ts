@@ -27,6 +27,25 @@ describe('Phase 2 output controls', () => {
     expect(() => preserveLocalSection(null, `Generated ${LOCAL_START}`, true)).toThrow('reserved');
   });
 
+  it('preserves text under a heading and migrates the old marker section', () => {
+    const heading = '## My thoughts';
+    const generated = '# Article\n\n## My thoughts\nGenerated placeholder\n\n## Next section\nKeep this generated section';
+    const old = `# Article\n\n${LOCAL_START}\nMy own note\n${LOCAL_END}\n`;
+    const migrated = preserveLocalSection(old, generated, true, 'heading', heading);
+    expect(migrated).toContain('## My thoughts\nMy own note\n\n## Next section');
+    expect(migrated).not.toContain('Generated placeholder');
+    const edited = migrated.replace('My own note', 'My revised note\n\n### A subsection\nMore writing');
+    const next = preserveLocalSection(edited, generated, true, 'heading', heading);
+    expect(next).toContain('My revised note\n\n### A subsection\nMore writing');
+    expect(next).toContain('## Next section\nKeep this generated section');
+    expect(preserveLocalSection(next, '# New generated', true, 'markers', heading)).toContain('My revised note');
+  });
+
+  it('rejects an ambiguous local heading instead of overwriting writing', () => {
+    const duplicated = '## My thoughts\nA\n## My thoughts\nB';
+    expect(() => preserveLocalSection(duplicated, '# New', true, 'heading', '## My thoughts')).toThrow('more than once');
+  });
+
   it('formats a report and configurable sync log', () => {
     const report = createSyncReport([
       { action: 'created', path: 'Readwise Sync/Books/One.md' },

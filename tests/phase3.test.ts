@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { JSDOM } from 'jsdom';
 import { requestUrl, TFile } from 'obsidian';
 import { Environment } from 'nunjucks';
+import { parse, stringify } from 'yaml';
 import { DEFAULT_SETTINGS } from 'src/constants';
 import { listTaggedReaderDocuments } from 'services/reader-api';
 import type { ReaderDocument } from 'services/reader-api';
 import { syncReaderDocuments } from 'services/reader-sync';
+import { renderReaderFrontmatter } from 'services/reader-frontmatter';
 import type { PluginContext } from 'types/plugin-context';
 import type { ReadwiseEnvironment } from 'services/readwise-environment';
 
@@ -14,6 +16,8 @@ jest.mock('obsidian', () => ({
   TFile: class {},
   normalizePath: (path: string) => path,
   getFrontMatterInfo: () => ({ contentStart: 0 }),
+  parseYaml: (text: string) => parse(text),
+  stringifyYaml: (value: unknown) => stringify(value),
 }));
 jest.mock('utils/file-utils', () => ({ normalizeFilename: (title: string) => title }));
 
@@ -30,6 +34,13 @@ beforeEach(() => {
 });
 
 describe('Phase 3 Reader ingestion', () => {
+  it('keeps Reader tracking fields while accepting custom YAML tags', () => {
+    const env = new Environment() as ReadwiseEnvironment;
+    const output = renderReaderFrontmatter(env, 'reader_id: wrong\ntags:\n  - custom/reader', document, 'vault-copy');
+    expect(parse(output.replace(/^---\n/, '').replace(/\n---\n\n$/, ''))).toMatchObject({ reader_id: 'doc123', tags: ['custom/reader'] });
+    expect(() => renderReaderFrontmatter(env, 'tags: [', document, 'vault-copy')).toThrow();
+  });
+
   it('uses the exact tag and follows Reader page cursors while excluding child highlights', async () => {
     api
       .mockResolvedValueOnce({ status: 200, json: { results: [document, { ...document, id: 'child', parent_id: 'doc123' }], nextPageCursor: 'next-1' } } as never)
@@ -64,7 +75,8 @@ describe('Phase 3 Reader ingestion', () => {
       process: async (file: TFile, change: (text: string) => string) => { files.set(file.path, change(files.get(file.path) ?? '')); },
     };
     const ctx = {
-      settings: { ...DEFAULT_SETTINGS, apiToken: 'token', readerEnabled: true, readerTag: 'vault-copy' },
+      settings: { ...DEFAULT_SETTINGS, apiToken: 'token', readerEnabled: true, readerTag: 'vault-copy',
+        readerYamlTemplate: 'tags:\n  - my/imported-document\nkind: article' },
       app: { vault, metadataCache: { getFileCache: (file: TFile): { frontmatter: { reader_id: string } } | null =>
         file.path.includes('doc123') ? { frontmatter: { reader_id: 'doc123' } } : null }, fileManager: {} },
       logger: { error: jest.fn(), warn: jest.fn() },
@@ -74,6 +86,8 @@ describe('Phase 3 Reader ingestion', () => {
     expect(report.counts.created).toBe(1);
     expect(files.get(readerPath)).toContain('Full text.');
     expect(files.get(readerPath)).toContain('A document note');
+    expect(files.get(readerPath)).toContain('my/imported-document');
+    expect(files.get(readerPath)).toContain('reader_id: doc123');
     expect(files.get(readerPath)).toContain('[[Readwise Sync/Articles/Article]]');
     expect(files.get(highlight.path)).toContain('[[Readwise Sync/Reader/Article doc123]]');
     expect([...files.keys()]).toContainEqual(expect.stringMatching(/_assets\/doc123-[a-f0-9]+\.png$/));

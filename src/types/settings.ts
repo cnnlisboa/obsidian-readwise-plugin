@@ -5,6 +5,8 @@ export interface PluginSettings {
   autoSync: boolean; // Whether to automatically sync on startup
   previewSync: boolean; // Review planned vault changes before writing
   preserveLocalSection: boolean; // Keep the editable local section across syncs
+  localSectionMode: 'markers' | 'heading';
+  localSectionHeading: string;
   readerEnabled: boolean;
   readerTag: string;
   readerFolder: string;
@@ -13,6 +15,7 @@ export interface PluginSettings {
   readerDownloadImages: boolean;
   readerDownloadSourceFiles: boolean;
   readerDocumentTemplate: string;
+  readerYamlTemplate: string;
   highlightSortOldestToNewest: boolean; // Sort highlights chronologically from oldest to newest
   highlightSortByLocation: boolean; // Sort highlights by their location in the document
   highlightDiscard: boolean; // Filter out discarded highlights

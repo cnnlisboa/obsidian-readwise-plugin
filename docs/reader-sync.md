@@ -15,7 +15,19 @@ The Reader sync fetches all currently tagged documents each time. It does not de
 
 The plugin saves HTML content as Markdown. Separate toggles control copying inline images and saving available PDF or EPUB source files in `_assets`. Both are on by default. Documents with neither HTML nor a saved source file report an error. Embedded media and externally hosted resources that cannot be downloaded may remain as links.
 
-Each note has a stable `reader_id` property. It also stores the Reader URL, source URL, and update time. The template receives Reader fields plus `content`, `source_file`, `highlight_link`, and `highlights`. `notes` is the Reader document note. With **Preserve local writing**, text between the existing local markers survives regeneration; writing elsewhere in a generated note will be replaced at the next sync.
+Each note has a stable `reader_id` property. It also stores the Reader URL, source URL, and update time. The body template receives Reader fields plus `content`, `source_file`, `highlight_link`, and `highlights`. `notes` is the Reader document note.
+
+The separate **Document YAML template** controls tags and other properties. It accepts YAML without delimiters (or with `---` delimiters) and receives `reader_tag`, `tag_names`, `document`, and all Reader document fields. For example:
+
+```yaml
+tags:
+  - my/imported-document
+kind: reading
+```
+
+The plugin adds `reader_id`, `reader_url`, `reader_source_url`, and `reader_updated_at` after rendering the template. These tracking fields remain under plugin control. Invalid YAML stops that document's write and reports an error.
+
+With **Preserve local writing**, choose comment markers or a unique heading such as `## My notes`. In heading mode, text from that heading through the next heading at the same or higher level survives regeneration. A change from comment markers to heading mode carries existing marked text over. Edits outside the protected section may be replaced at the next sync.
 
 ## Highlights
 

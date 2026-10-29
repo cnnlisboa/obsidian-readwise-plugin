@@ -3,6 +3,7 @@ import TurndownService from 'turndown';
 import type { ReadwiseEnvironment } from './readwise-environment';
 import { listTaggedReaderDocuments, type ReaderDocument } from './reader-api';
 import { LOCAL_END, LOCAL_START, preserveLocalSection } from './local-section';
+import { renderReaderFrontmatter } from './reader-frontmatter';
 import { createSyncReport, type SyncEvent, type SyncReport } from './sync-report';
 import type { PluginContext } from 'types/plugin-context';
 import { normalizeFilename } from 'utils/file-utils';
@@ -35,10 +36,6 @@ function combinedHighlightBody(text: string): string {
     .replaceAll(LOCAL_START, '')
     .replaceAll(LOCAL_END, '')
     .trim();
-}
-
-function frontmatter(document: ReaderDocument): string {
-  return `---\nreader_id: ${JSON.stringify(document.id)}\nreader_url: ${JSON.stringify(document.url)}\nreader_source_url: ${JSON.stringify(document.source_url ?? '')}\nreader_updated_at: ${JSON.stringify(document.updated_at)}\n---\n\n`;
 }
 
 function hashUrl(url: string): string {
@@ -156,11 +153,12 @@ export async function syncReaderDocuments(ctx: PluginContext, env: ReadwiseEnvir
       const rendered = env.renderString(ctx.settings.readerDocumentTemplate, {
         ...document, content, source_file: sourceFile, highlight_link: highlightLink, highlights,
       });
-      const generated = `${frontmatter(document)}${rendered.trim()}${sourceFile ? `\n\nSource file: ${sourceFile}` : ''}\n`;
+      const generated = `${renderReaderFrontmatter(env, ctx.settings.readerYamlTemplate, document, readerTag.trim())}${rendered.trim()}${sourceFile ? `\n\nSource file: ${sourceFile}` : ''}\n`;
       const old = existing.get(document.id) ?? ctx.app.vault.getFileByPath(path);
       if (old) {
         const current = await ctx.app.vault.cachedRead(old);
-        const next = preserveLocalSection(current, generated, ctx.settings.preserveLocalSection);
+        const next = preserveLocalSection(current, generated, ctx.settings.preserveLocalSection,
+          ctx.settings.localSectionMode, ctx.settings.localSectionHeading);
         if (old.path !== path) {
           if (ctx.app.vault.getAbstractFileByPath(path)) throw new Error(`Target path already exists: ${path}`);
           await ctx.app.fileManager.renameFile(old, path);
@@ -168,7 +166,8 @@ export async function syncReaderDocuments(ctx: PluginContext, env: ReadwiseEnvir
         if (current !== next) await ctx.app.vault.modify(old, next);
         events.push({ action: 'updated', path });
       } else {
-        await ctx.app.vault.create(path, preserveLocalSection(null, generated, ctx.settings.preserveLocalSection));
+        await ctx.app.vault.create(path, preserveLocalSection(null, generated, ctx.settings.preserveLocalSection,
+          ctx.settings.localSectionMode, ctx.settings.localSectionHeading));
         events.push({ action: 'created', path });
       }
       if (highlight && ctx.settings.readerLinkHighlights) await linkHighlightBack(ctx, highlight, path);

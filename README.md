@@ -18,9 +18,9 @@ The first time this plugin is ran, it will do a full sync, downloading all conte
 
 This fork installs as `readwise-sync` alongside the original plugin. Its default note folder is `Readwise Sync`, and startup sync is off for a fresh installation.
 
-In General settings, turn on **Preview sync changes** to review planned document actions before a library sync. Turn on **Preserve local writing** to keep text between the `readwise-obsidian:local` markers in generated notes. The marker name remains stable for existing notes. The sync log has an optional vault-relative path override and Nunjucks templates for its title and body.
+In General settings, turn on **Preview sync changes** to review planned document actions before a library sync. **Preserve local writing** can use comment markers or a configurable Markdown heading; existing marked text migrates to the heading when you switch modes. The marker name remains stable for existing notes. The sync log has an optional vault-relative path override and Nunjucks templates for its title and body.
 
-The Reader tab can sync full documents selected by an exact Reader tag, including their document notes and available content assets. It can link matching Readwise highlight notes or copy their current body into the document note. See [Reader document sync](docs/reader-sync.md) for setup, matching rules, and limits.
+The Reader tab can sync full documents selected by an exact Reader tag, including their document notes and available content assets. It has separate body and YAML templates, so imported documents can use their own tags and properties. It can link matching Readwise highlight notes or copy their current body into the document note. See [Reader document sync](docs/reader-sync.md) for setup, matching rules, and limits.
 
 ## Commands
 

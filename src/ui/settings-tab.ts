@@ -9,10 +9,14 @@ import {
   type TextComponent,
 } from 'obsidian';
 import { Controller } from 'services/controller';
+import { Atomizer } from 'services/atomizer';
 import ReadwiseApi, { TokenValidationError } from 'services/readwise-api';
-import type { ReadwiseEnvironment } from 'services/readwise-environment';
+import { ReadwiseEnvironment, ReadwiseLoader } from 'services/readwise-environment';
+import { buildReadwiseDocument } from 'services/readwise-document-mapper';
+import { renderMarkdownTemplate } from 'services/template-rendering';
 import { DEFAULT_SETTINGS } from 'src/constants';
 import type { PluginContext } from 'types/plugin-context';
+import type { Export } from 'types/library';
 import type { TemplateValidationResult } from 'types/utilities';
 import { WarningDialog } from 'ui/dialog';
 import { sanitizeFrontmatterTemplate, validateFrontmatterTemplate } from 'utils/frontmatter-utils';
@@ -185,13 +189,13 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
 
   // Button-based authentication inspired by the official Readwise plugin
   private getReadwiseMirrorClientId() {
-    let readwiseMirrorClientId = window.localStorage.getItem('connrado-readwise-obsidian-client-id');
+    let readwiseMirrorClientId = window.localStorage.getItem('readwise-obsidian-client-id');
     if (readwiseMirrorClientId) {
       return readwiseMirrorClientId;
     }
 
     readwiseMirrorClientId = Math.random().toString(36).substring(2, 15);
-    window.localStorage.setItem('connrado-readwise-obsidian-client-id', readwiseMirrorClientId);
+    window.localStorage.setItem('readwise-obsidian-client-id', readwiseMirrorClientId);
     return readwiseMirrorClientId;
   }
 
@@ -615,6 +619,22 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
           await this.ctx.saveAndApplySettings();
         })
       );
+
+    new Setting(containerEl)
+      .setName('Preview sync changes')
+      .setDesc('Show planned document actions and ask before each library sync.')
+      .addToggle((toggle) => toggle.setValue(this.ctx.settings.previewSync).onChange(async (value) => {
+        this.ctx.settings.previewSync = value;
+        await this.ctx.saveAndApplySettings();
+      }));
+
+    new Setting(containerEl)
+      .setName('Preserve local writing')
+      .setDesc('Keep text between the local-section markers when synced notes are regenerated.')
+      .addToggle((toggle) => toggle.setValue(this.ctx.settings.preserveLocalSection).onChange(async (value) => {
+        this.ctx.settings.preserveLocalSection = value;
+        await this.ctx.saveAndApplySettings();
+      }));
   }
 
   private renderAtomicHighlightsSettings(containerEl: HTMLElement): void {
@@ -1126,7 +1146,66 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
               await this.ctx.saveAndApplySettings();
             })
         );
+      new Setting(containerEl)
+        .setClass('indent')
+        .setName('Log path override')
+        .setDesc('Vault-relative Markdown path. Leave blank to use the library folder and log filename.')
+        .addText((text) => text.setPlaceholder('Logs/Readwise Sync.md').setValue(this.ctx.settings.logFilePath).onChange(async (value) => {
+          this.ctx.settings.logFilePath = value.trim();
+          await this.ctx.saveAndApplySettings();
+        }));
+      new Setting(containerEl)
+        .setClass('indent')
+        .setName('Log title template')
+        .setDesc('Nunjucks variables: date, time, summary, report, items.')
+        .addTextArea((text) => text.setValue(this.ctx.settings.logTitleTemplate).onChange(async (value) => {
+          this.ctx.settings.logTitleTemplate = value;
+          await this.ctx.saveAndApplySettings();
+        }));
+      new Setting(containerEl)
+        .setClass('indent')
+        .setName('Log body template')
+        .setDesc('Nunjucks variables: date, time, summary, report.counts, report.events, items.')
+        .addTextArea((text) => text.setValue(this.ctx.settings.logBodyTemplate).onChange(async (value) => {
+          this.ctx.settings.logBodyTemplate = value;
+          await this.ctx.saveAndApplySettings();
+        }));
     }
+  }
+
+  private appendMarkdownTemplatePreview(containerEl: HTMLElement, input: HTMLTextAreaElement, kind: 'header' | 'highlight'): void {
+    const box = containerEl.createDiv({ cls: 'template-preview' });
+    box.createEl('strong', { text: 'Sample rendered note' });
+    const result = box.createEl('pre', { cls: 'template-preview-content' });
+    const update = () => {
+      try {
+        const book: Export = {
+          user_book_id: 123, is_deleted: false, title: 'Example Book', author: 'Example Author', readable_title: 'Example Book',
+          source: 'manual', cover_image_url: 'https://example.com/cover.jpg', unique_url: '', book_tags: [], category: 'books',
+          document_note: 'An example document note.', summary: 'Example summary.', readwise_url: 'https://readwise.io/bookreview/123',
+          source_url: '', asin: null,
+          highlights: [{ id: 456, is_deleted: false, text: 'An example highlight.', note: 'An example comment.', location: 1,
+            location_type: 'page', highlighted_at: '2026-01-01', created_at: '2026-01-01', updated_at: '2026-01-01', url: null,
+            readwise_url: 'https://readwise.io/open/456', color: 'yellow', book_id: 123, tags: [], is_favorite: false, is_discard: false }],
+        };
+        const loader = new ReadwiseLoader();
+        const env = new ReadwiseEnvironment(loader);
+        loader.setSource('header', kind === 'header' ? input.value : this.ctx.settings.headerTemplate);
+        loader.setSource('highlight', kind === 'highlight' ? input.value : this.ctx.settings.highlightTemplate);
+        const doc = buildReadwiseDocument(book, { basename: 'Example Book', settings: this.ctx.settings });
+        const raw = renderMarkdownTemplate(env, loader, { doc, book, highlights: book.highlights,
+          headerTemplate: 'header', highlightTemplate: 'highlight', settings: this.ctx.settings });
+        const atomizer = new Atomizer();
+        atomizer.setCompositeEnvironment();
+        result.setText(atomizer.atomize(raw, { basename: doc.sanitized_title, doc, book }).contents);
+        input.removeClass('invalid-template');
+      } catch (error) {
+        result.setText(`Preview error: ${this.getErrorMessage(error)}`);
+        input.addClass('invalid-template');
+      }
+    };
+    input.addEventListener('input', update);
+    update();
   }
 
   private renderFrontmatterTemplateSettings(containerEl: HTMLElement): void {
@@ -1511,7 +1590,6 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
         ])
       )
       .addTextArea((text) => {
-        // TODO: Add header template validation resp. preview
         const initialRows = 15;
         text.inputEl.addClass('settings-template-input');
         text.inputEl.rows = initialRows;
@@ -1532,6 +1610,8 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
         text.inputEl.addEventListener('input', () => {
           this.adjustTextareaRows(text.inputEl, initialRows);
         });
+
+        this.appendMarkdownTemplatePreview(containerEl, text.inputEl, 'header');
 
         return text;
       });
@@ -1570,7 +1650,6 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
         ])
       )
       .addTextArea((text) => {
-        // TODO: Add settings template validation resp. preview
         const initialRows = 12;
         text.inputEl.addClass('settings-template-input');
         text.inputEl.rows = initialRows;
@@ -1591,6 +1670,8 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
         text.inputEl.addEventListener('input', () => {
           this.adjustTextareaRows(text.inputEl, initialRows);
         });
+
+        this.appendMarkdownTemplatePreview(containerEl, text.inputEl, 'highlight');
 
         return text;
       });

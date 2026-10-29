@@ -1,6 +1,6 @@
 {
-    "name": "readwise-plugin",
-    "version": "2.4.2-beta.4",
+    "name": "readwise-obsidian",
+    "version": "2.4.3",
     "description": "This is a plugin for Obsidian (https://obsidian.md)",
     "main": "main.js",
     "scripts": {
@@ -14,7 +14,7 @@
         "release:dry-run": "npm ci && npm run build && semantic-release --dry-run"
     },
     "keywords": [],
-    "author": "",
+    "author": "Connrado Lisboa",
     "license": "MIT",
     "devDependencies": {
         "@babel/preset-env": "^7.26.0",

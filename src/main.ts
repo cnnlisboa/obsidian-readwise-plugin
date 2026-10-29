@@ -10,6 +10,8 @@ import { FrontmatterManager } from 'services/frontmatter-manager';
 import Logger from 'services/logger';
 import { buildReadwiseDocument } from 'services/readwise-document-mapper';
 import { ReadwiseEnvironment, ReadwiseLoader } from 'services/readwise-environment';
+import { createSyncReport, type SyncReport } from 'services/sync-report';
+import { renderSyncLog, resolveSyncLogPath } from 'services/sync-log';
 import { filterHighlights, renderMarkdownTemplate } from 'services/template-rendering';
 import spacetime from 'spacetime';
 import { AUTHOR_SEPARATORS, DEFAULT_SETTINGS } from 'src/constants';
@@ -18,6 +20,7 @@ import type { Export, Library } from 'types/library';
 import type { PluginContext } from 'types/plugin-context';
 import type { PluginSettings } from 'types/settings';
 import Notify from 'ui/notify';
+import { ConfirmDialog } from 'ui/dialog';
 import ReadwiseMirrorSettingTab from 'ui/settings-tab';
 import { normalizeFilename } from 'utils/file-utils';
 import { humanReadableFormat } from 'utils/format-utils';
@@ -87,7 +90,7 @@ export default class ReadwiseMirror extends Plugin {
     // Move UI setup to onLayoutReady
     this.app.workspace.onLayoutReady(() => {
       void (async () => {
-        await this.lock.acquire('readwise-plugin:loaded');
+        await this.lock.acquire('readwise-obsidian:loaded');
         const statusBarItem = this.addStatusBarItem();
         this._notify = new Notify(statusBarItem);
         await this.initializeUI();
@@ -96,8 +99,8 @@ export default class ReadwiseMirror extends Plugin {
   }
 
   public onunload(): void {
-    this.logger.debug('Readwise Plugin unloaded.');
-    this.lock.release('readwise-plugin:loaded');
+    this.logger.debug('Readwise Obsidian unloaded.');
+    this.lock.release('readwise-obsidian:loaded');
     super.onunload();
   }
 
@@ -105,7 +108,7 @@ export default class ReadwiseMirror extends Plugin {
     try {
       await this.loadAndApplySettings();
       this.addSettingTab(new ReadwiseMirrorSettingTab(this, this.ctx, this.env));
-      this.logger.debug('Readwise Plugin loaded.');
+      this.logger.debug('Readwise Obsidian loaded.');
 
       // Instantiate controller and attach to context
       this._frontmatterManager = new FrontmatterManager(this.ctx, this.env, this.app.fileManager);
@@ -162,7 +165,7 @@ export default class ReadwiseMirror extends Plugin {
     // Order matters: defaults first, then loaded values override them
     Object.assign(this.settings, DEFAULT_SETTINGS, loaded ?? {});
 
-    if (this.lock.isAcquired('readwise-plugin:loaded')) {
+    if (this.lock.isAcquired('readwise-obsidian:loaded')) {
       await this.applySettings();
     }
   }
@@ -255,27 +258,23 @@ export default class ReadwiseMirror extends Plugin {
       });
   }
 
-  public async writeLogToMarkdown(library: Library) {
+  public async writeLogToMarkdown(library: Library, report: SyncReport = createSyncReport([])) {
     const vault = this.app.vault;
-
-    const path = `${this.settings.baseFolderName}/${this.settings.logFileName}`;
+    const path = resolveSyncLogPath(this.settings);
     const abstractFile = vault.getAbstractFileByPath(path);
 
     const now = spacetime.now();
-    let logString = `# [[${now.format('iso-short')}]] *(${now.time()})*`;
-
-    for (const bookId in library.books) {
-      const book = library.books[bookId];
-
-      const { highlights } = book;
-      const num_highlights = highlights.length;
-      this.logger.debug(`Replacing colon with ${this.settings.colonSubstitute}`);
-      const sanitizedTitle = this.getFileNameFromDoc(book);
-      const contents = `\n- [[${sanitizedTitle}]] *(${num_highlights} highlights)*`;
-      logString += contents;
-    }
+    const items = Object.values(library.books).map((book) => ({
+      id: book.user_book_id,
+      title: this.getFileNameFromDoc(book),
+      highlights: book.highlights.length,
+      category: book.category,
+    }));
+    const logString = renderSyncLog(this.env, this.settings, report, items, now.format('iso-short'), now.time());
 
     try {
+      const parentPath = path.slice(0, path.lastIndexOf('/'));
+      if (parentPath) await this.deduplicatingVaultWriter.ensureFolder(parentPath);
       if (abstractFile) {
         // If log file already exists, append to the content instead of overwriting
         const logFile = vault.getFileByPath(path);
@@ -292,8 +291,35 @@ export default class ReadwiseMirror extends Plugin {
     }
   }
 
+  public async confirmSyncPreview(library: Library): Promise<boolean> {
+    if (!this.settings.previewSync || Object.keys(library.books).length === 0) return true;
+    this.deduplicatingVaultWriter.buildTrackedFileIndex();
+    const actions: string[] = [];
+    for (const book of Object.values(library.books)) {
+      const basename = this.getFileNameFromDoc(book);
+      const target = normalizePath(`${this.deduplicatingVaultWriter.getCategoryPath(book.category)}/${basename}.md`);
+      const existing = await this.deduplicatingVaultWriter.findExistingByHighlightsUrl({ readwise_url: book.readwise_url });
+      if (existing.length > 0) {
+        actions.push(`Update ${existing[0].path}`);
+        if (this.settings.enableFileNameUpdates && existing[0].path !== target) actions.push(`Rename ${existing[0].path} toward ${target}`);
+        for (const duplicate of existing.slice(1)) actions.push(`${this.settings.deleteDuplicates ? 'Trash' : 'Mark'} duplicate ${duplicate.path}`);
+      } else {
+        actions.push(`${this.app.vault.getFileByPath(target) ? 'Update or create collision for' : 'Create'} ${target}`);
+      }
+    }
+    const prompt = createFragment((fragment) => {
+      fragment.createEl('p', { text: `${actions.length} planned document actions. Review before writing to the vault.` });
+      if (this.settings.atomicHighlights) fragment.createEl('p', { text: 'Atomic highlight files may also be created or updated.' });
+      if (this.settings.logFile) fragment.createEl('p', { text: `A sync entry will be appended to ${resolveSyncLogPath(this.settings)}.` });
+      const list = fragment.createEl('ul');
+      for (const action of actions.slice(0, 60)) list.createEl('li', { text: action });
+      if (actions.length > 60) fragment.createEl('p', { text: `${actions.length - 60} more actions are not shown.` });
+    });
+    return new Promise((resolve) => new ConfirmDialog(this.app, 'Preview Readwise sync', prompt, resolve).open());
+  }
+
   // Write a library of Readwise books to markdown files
-  public async writeLibraryToMarkdown(library: Library) {
+  public async writeLibraryToMarkdown(library: Library): Promise<SyncReport> {
     this.logger.group('Write Library to Markdown');
     try {
       await this.deduplicatingVaultWriter.createCategoryFolders(library.categories);
@@ -310,17 +336,19 @@ export default class ReadwiseMirror extends Plugin {
     if (readwiseFiles.length === 0) {
       this.logger.debug('No eligible Readwise files to process (all highlights filtered out). Skipping write.');
       this.logger.groupEnd();
-      return;
+      return createSyncReport([]);
     }
 
     // Process all files in batch
     try {
       this.logger.time('process');
-      await this.deduplicatingVaultWriter.process(readwiseFiles);
+      const report = await this.deduplicatingVaultWriter.process(readwiseFiles);
       this.logger.timeEnd('process');
+      return report;
     } catch (err) {
       this.logger.error('Failed to process files batch', err);
-      this.notify.notice('Readwise: Failed to process some files during sync.');
+      const failed = this.deduplicatingVaultWriter.getLastSyncReport().events.find((event) => event.action === 'failed');
+      this.notify.notice(`Readwise: Sync write failed${failed ? ` at ${failed.path}` : ''}.`);
       throw err;
     } finally {
       this.logger.groupEnd();

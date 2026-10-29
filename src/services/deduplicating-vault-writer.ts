@@ -3,6 +3,8 @@ import { getFrontMatterInfo, normalizePath, TFile, type Vault } from 'obsidian';
 import type { FrontmatterManager } from 'services/frontmatter-manager';
 import type { AtomicFile, BaseFile, ReadwiseDocument } from 'types/document';
 import type { PluginContext } from 'types/plugin-context';
+import { preserveLocalSection } from './local-section';
+import { createSyncReport, type SyncEvent, type SyncReport } from './sync-report';
 import { isInReadwiseLibrary, isTrackedReadwiseNote } from 'utils/tracking-utils';
 import type { Frontmatter } from './frontmatter';
 
@@ -12,6 +14,11 @@ export class DeduplicatingVaultWriter {
   private fileCount = 0;
   private readonly app = this.ctx.app;
   private trackedFileIndex = new Map<string, TFile[]>();
+  private syncEvents: SyncEvent[] = [];
+
+  public getLastSyncReport(): SyncReport {
+    return createSyncReport(this.syncEvents);
+  }
 
   constructor(
     private readonly ctx: PluginContext,
@@ -37,7 +44,7 @@ export class DeduplicatingVaultWriter {
     }
   }
 
-  private async ensureFolder(path: string): Promise<void> {
+  public async ensureFolder(path: string): Promise<void> {
     const parts = normalizePath(path).split('/').filter(Boolean);
     for (let i = 1; i <= parts.length; i++) {
       const currentPath = parts.slice(0, i).join('/');
@@ -54,7 +61,7 @@ export class DeduplicatingVaultWriter {
    * @param doc The readwise document to find matches for
    * @returns An array of matching files
    */
-  public async findExistingByHighlightsUrl(doc: ReadwiseDocument): Promise<TFile[]> {
+  public async findExistingByHighlightsUrl(doc: Pick<ReadwiseDocument, 'readwise_url'>): Promise<TFile[]> {
     if (!this.ctx.settings.trackFiles || !this.ctx.settings.trackingProperty || !doc.readwise_url) {
       return []; // No tracking or no readwise_url
     }
@@ -126,6 +133,7 @@ export class DeduplicatingVaultWriter {
     const file: TFile = readwiseFile.primary;
     this.notifyFileCount();
     try {
+      await this.validateLocalSection(file, readwiseFile.contents);
       // Process frontmatter atomically
       await this.app.fileManager.processFrontMatter(file, (existingFrontmatter: Record<string, unknown>) => {
         // Only update frontmatter if frontmatter is enabled
@@ -146,6 +154,7 @@ export class DeduplicatingVaultWriter {
       });
 
       await this.fileWrite(file, readwiseFile.contents);
+      this.syncEvents.push({ action: 'updated', path: file.path });
     } catch (err) {
       this.ctx.logger.error(`Readwise: Attempt to update file ${file.path} failed`, err);
       throw err;
@@ -166,10 +175,12 @@ export class DeduplicatingVaultWriter {
       if (this.ctx.settings.deleteDuplicates) {
         this.ctx.logger.debug(`Trashing duplicate ${file.path}`);
         await this.app.fileManager.trashFile(file);
+        this.syncEvents.push({ action: 'trashed duplicate', path: file.path });
       } else {
         frontmatter.set('duplicate', true);
         this.ctx.logger.debug(`Marking file ${file.path} as duplicate`, frontmatter);
         await this.frontmatterManager.writeUpdatedFrontmatter(file, frontmatter);
+        this.syncEvents.push({ action: 'marked duplicate', path: file.path });
       }
     } catch (err) {
       this.ctx.logger.error(`Failed to handle duplicate ${file.path}`, err);
@@ -185,7 +196,8 @@ export class DeduplicatingVaultWriter {
    * @param readwiseFiles - An array of ReadwiseFile objects to be processed.
    * @returns A Promise that resolves when all file groups have been processed.
    */
-  public async process(readwiseFiles: BaseFile[]): Promise<void> {
+  public async process(readwiseFiles: BaseFile[]): Promise<SyncReport> {
+    this.syncEvents = [];
     // Reset the file count
     this.totalFileCount = readwiseFiles.length;
     this.fileCount = 0;
@@ -209,8 +221,14 @@ export class DeduplicatingVaultWriter {
       this.ctx.logger.debug('Processing path group', { path, groupFiles });
 
       // Process the files in the path group
-      await this.writePathGroup(groupFiles);
+      try {
+        await this.writePathGroup(groupFiles);
+      } catch (error) {
+        this.syncEvents.push({ action: 'failed', path, detail: String(error) });
+        throw error;
+      }
     }
+    return createSyncReport(this.syncEvents);
   }
 
   public async processFrontmatter(readwiseFiles: BaseFile[]): Promise<void> {
@@ -326,8 +344,10 @@ export class DeduplicatingVaultWriter {
           const existingFile = this.vault.getFileByPath(path);
           if (!existingFile) throw new Error(`File not found at '${path}' despite existence check`);
           this.ctx.logger.debug('Overwriting existing file', { doc: file.doc, ...fileOptions });
+          await this.validateLocalSection(existingFile, file.contents);
           await this.frontmatterWrite(existingFile, frontmatter);
           await this.fileWrite(existingFile, file.contents, fileOptions);
+          this.syncEvents.push({ action: 'updated', path: existingFile.path });
           return existingFile;
         }
         // Create new path with hash
@@ -338,20 +358,24 @@ export class DeduplicatingVaultWriter {
           const existingNewFile = this.vault.getFileByPath(newPath);
           if (!existingNewFile) throw new Error(`File not found at '${newPath}' despite existence check`);
           this.ctx.logger.debug('Overwriting existing file (with hash)', { doc: file.doc, ...fileOptions });
+          await this.validateLocalSection(existingNewFile, file.contents);
           await this.frontmatterWrite(existingNewFile, frontmatter);
           await this.fileWrite(existingNewFile, file.contents, fileOptions);
+          this.syncEvents.push({ action: 'updated', path: existingNewFile.path });
           return existingNewFile;
         }
         this.ctx.logger.debug('Creating new file (with hash)', { doc: file.doc, ...fileOptions });
-        const newFile: TFile = await this.vault.create(newPath, file.contents, fileOptions);
+        const newFile: TFile = await this.vault.create(newPath, preserveLocalSection(null, file.contents, this.ctx.settings.preserveLocalSection), fileOptions);
         await this.frontmatterWrite(newFile, frontmatter);
+        this.syncEvents.push({ action: 'created', path: newFile.path });
         return newFile;
       }
 
       // If the file doesn't exist, create it
       this.ctx.logger.debug('Creating new file', { doc: file.doc, ...fileOptions });
-      const newFile: TFile = await this.vault.create(path, file.contents, fileOptions);
+      const newFile: TFile = await this.vault.create(path, preserveLocalSection(null, file.contents, this.ctx.settings.preserveLocalSection), fileOptions);
       await this.frontmatterWrite(newFile, frontmatter);
+      this.syncEvents.push({ action: 'created', path: newFile.path });
       return newFile;
     } catch (err) {
       this.ctx.logger.error(`Failed to create file '${path}'`, err);
@@ -401,6 +425,10 @@ export class DeduplicatingVaultWriter {
     });
   }
 
+  private async validateLocalSection(existingFile: TFile, generated: string): Promise<void> {
+    preserveLocalSection(await this.vault.cachedRead(existingFile), generated, this.ctx.settings.preserveLocalSection);
+  }
+
   /**
    * Write contents atomically
    * @param existingFile - The existing file to update
@@ -414,9 +442,9 @@ export class DeduplicatingVaultWriter {
       (data) => {
         const fmi = getFrontMatterInfo(data);
         if (fmi?.exists) {
-          return `${data.slice(0, fmi.contentStart)}${fileContents}`;
+          return `${data.slice(0, fmi.contentStart)}${preserveLocalSection(data, fileContents, this.ctx.settings.preserveLocalSection)}`;
         }
-        return data;
+        return preserveLocalSection(data, fileContents, this.ctx.settings.preserveLocalSection);
       },
       fileOptions
     );

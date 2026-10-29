@@ -3,6 +3,8 @@ export interface PluginSettings {
   apiToken: string | null; // Readwise API authentication token
   lastUpdated: string | null; // Timestamp of last successful sync
   autoSync: boolean; // Whether to automatically sync on startup
+  previewSync: boolean; // Review planned vault changes before writing
+  preserveLocalSection: boolean; // Keep the editable local section across syncs
   highlightSortOldestToNewest: boolean; // Sort highlights chronologically from oldest to newest
   highlightSortByLocation: boolean; // Sort highlights by their location in the document
   highlightDiscard: boolean; // Filter out discarded highlights
@@ -10,6 +12,9 @@ export interface PluginSettings {
   colonSubstitute: string; // String to replace colons in filenames
   logFile: boolean; // Whether to save sync logs to a file
   logFileName: string; // Name of the sync log file
+  logFilePath: string; // Optional vault-relative override for the sync log path
+  logTitleTemplate: string; // Nunjucks template for the log entry title
+  logBodyTemplate: string; // Nunjucks template for the log entry body
   syncNotifications: boolean; // Show Obsidian notifications during sync
   frontMatter: boolean; // Whether to include YAML frontmatter in notes
   frontMatterTemplate: string; // Template for YAML frontmatter content

@@ -1,10 +1,10 @@
-# Readwise Plugin
+# Readwise Obsidian
 
 >[!WARNING]  
 >Readwise Mirror 2.x is a major rewrite of the plugin which will break internal links if you update right away. This is due to changes how the filenames for notes created by this plugin are generated and handled.
 >The documentation contains a step-by-step guide how you can prepare an existing Readwise library for an upgrade to 2.x.x by adding the `uri` tracking property to the frontmatter of your notes before upgrading. This will ensure links to notes synced from your Readwise library can be updated by Obsidian after the upgrade. You can find the guide [in this section](#upgrading-from-1xx-to-2xx).
 
-**Readwise Plugin** is Connrado Lisboa's fork of the open source Readwise Mirror plugin for the powerful note-taking and knowledge-base application [Obsidian](http://obsidian.md/). This plugin allows a user to "mirror" their entire Readwise library by automatically downloading all highlights/notes and syncing changes directly into an Obsidian vault.
+**Readwise Obsidian** is Connrado Lisboa's fork of the open source Readwise Mirror plugin for the powerful note-taking and knowledge-base application [Obsidian](http://obsidian.md/). This plugin allows a user to "mirror" their entire Readwise library by automatically downloading all highlights/notes and syncing changes directly into an Obsidian vault.
 
 Its advanced features allow you to keep internal links to your Readwise notes intact across syncs, protect or update frontmatter properties in your notes, and define custom filenames based on each Readwise item's properties.
 
@@ -13,6 +13,12 @@ Its advanced features allow you to keep internal links to your Readwise notes in
 The format of the output is similar to the Markdown export available directly from Readwise (which groups all highlights together in one file per book/article/etc), except that it is integrated directly into Obsidian and provides beneficial Obsidian formatting enhancements, such as automatically creating `[[Links]]` for Book Titles and Author Names *(supports multiple authors)* and block level link references *(using highlight ID)*, as well as custom filenames and advanced frontmatter management.
 
 The first time this plugin is ran, it will do a full sync, downloading all content from Readwise. Every subsequent sync will only check for sources with new changes made after the last sync attempt; if any are found, it will automatically regenerate the note with the most current data.
+
+## Fork controls
+
+This fork installs as `readwise-obsidian` alongside the original plugin. Its default note folder is `Readwise Obsidian`, and startup sync is off for a fresh installation.
+
+In General settings, turn on **Preview sync changes** to review planned document actions before a library sync. Turn on **Preserve local writing** to keep text between the `readwise-obsidian:local` markers in generated notes. The sync log has an optional vault-relative path override and Nunjucks templates for its title and body.
 
 ## Commands
 

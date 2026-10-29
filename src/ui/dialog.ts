@@ -1,8 +1,12 @@
 import { type App, Modal, Setting } from 'obsidian';
 
 export class ConfirmDialog extends Modal {
+  private resolved = false;
+  private onSubmit: (confirm: boolean) => void;
+
   constructor(app: App, title: string, prompt: string | DocumentFragment, onSubmit: (confirm: boolean) => void) {
     super(app);
+    this.onSubmit = onSubmit;
     this.titleEl.setText(title);
 
     if (typeof prompt === 'string') {
@@ -19,16 +23,22 @@ export class ConfirmDialog extends Modal {
           .setButtonText('OK')
           .setCta()
           .onClick(() => {
+            this.resolved = true;
             this.close();
             onSubmit(true);
           })
       )
       .addButton((btn) =>
         btn.setButtonText('Cancel').onClick(() => {
+          this.resolved = true;
           this.close();
           onSubmit(false);
         })
       );
+  }
+
+  onClose(): void {
+    if (!this.resolved) this.onSubmit(false);
   }
 }
 

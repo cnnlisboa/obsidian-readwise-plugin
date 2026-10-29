@@ -9,6 +9,7 @@ import { isInReadwiseLibrary, isTrackedReadwiseNote } from 'utils/tracking-utils
 import type ReadwiseMirror from '../main';
 import type { PluginContext } from '../types/plugin-context';
 import ReadwiseApi from './readwise-api';
+import { summarizeSyncReport } from './sync-report';
 
 /**
  * Controller class managing Readwise API interactions and sync operations
@@ -106,8 +107,12 @@ export class Controller {
       }
       // ...existing filtering and writing logic...
       this.prepareAtomicHighlightsCategory(library);
-      await this.plugin.writeLibraryToMarkdown(library);
-      if (this.ctx.settings.logFile) await this.plugin.writeLogToMarkdown(library);
+      if (this.ctx.settings.previewSync && !(await this.plugin.confirmSyncPreview(library))) {
+        this.ctx.notice('Readwise: Sync cancelled.');
+        return;
+      }
+      const report = await this.plugin.writeLibraryToMarkdown(library);
+      if (this.ctx.settings.logFile) await this.plugin.writeLogToMarkdown(library, report);
       const previousCheckpoint = this.ctx.settings.lastUpdated;
       this.ctx.settings.lastUpdated = syncStartedAt;
       try {
@@ -117,6 +122,7 @@ export class Controller {
         throw error;
       }
       this.ctx.setStatusBarText(`Readwise: Synced ${humanReadableFormat(this.ctx.settings.lastUpdated)}`);
+      if (this.ctx.settings.syncNotifications) this.ctx.notice(`Readwise: Sync complete. ${summarizeSyncReport(report)}`);
     } catch (error) {
       this.ctx.logger.error('Error during sync:', error);
       this.ctx.notice(`Readwise: Sync failed. ${error}`);
@@ -175,11 +181,12 @@ export class Controller {
       const library = await this.api.downloadSingleBook(trackedFile.readwiseId);
       if (Object.keys(library.books).length > 0) {
         this.prepareAtomicHighlightsCategory(library);
-        await this.plugin.writeLibraryToMarkdown(library);
+        if (this.ctx.settings.previewSync && !(await this.plugin.confirmSyncPreview(library))) return;
+        const report = await this.plugin.writeLibraryToMarkdown(library);
 
-        if (this.ctx.settings.logFile) await this.plugin.writeLogToMarkdown(library);
+        if (this.ctx.settings.logFile) await this.plugin.writeLogToMarkdown(library, report);
 
-        if (this.ctx.settings.syncNotifications) this.ctx.notice('Readwise: Book update complete.');
+        if (this.ctx.settings.syncNotifications) this.ctx.notice(`Readwise: Book update complete. ${summarizeSyncReport(report)}`);
       } else {
         this.ctx.notice(`Readwise: Note with id ${trackedFile.readwiseId} not found on Readwise.`);
         this.ctx.logger.warn(`Readwise: Note with id ${trackedFile.readwiseId} not found on Readwise.`);
@@ -403,13 +410,14 @@ export class Controller {
       const library = await this.api.downloadMultipleBooks(bookIds);
       if (Object.keys(library.books).length > 0) {
         this.prepareAtomicHighlightsCategory(library);
+        if (this.ctx.settings.previewSync && !(await this.plugin.confirmSyncPreview(library))) return;
 
         if (this.ctx.settings.syncNotifications)
           this.ctx.notice(`Readwise: writing ${Object.keys(library.books).length} updated books to markdown...`);
         this.ctx.logger.debug(`Readwise: writing ${Object.keys(library.books).length} updated books to markdown...`);
-        await this.plugin.writeLibraryToMarkdown(library);
-        if (this.ctx.settings.logFile) await this.plugin.writeLogToMarkdown(library);
-        if (this.ctx.settings.syncNotifications) this.ctx.notice('Readwise: Book update complete.');
+        const report = await this.plugin.writeLibraryToMarkdown(library);
+        if (this.ctx.settings.logFile) await this.plugin.writeLogToMarkdown(library, report);
+        if (this.ctx.settings.syncNotifications) this.ctx.notice(`Readwise: Book update complete. ${summarizeSyncReport(report)}`);
       } else {
         this.ctx.notice('Readwise: No notes from folder found on Readwise.');
         this.ctx.logger.warn('Readwise: No notes from folder found on Readwise.');

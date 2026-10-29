@@ -166,11 +166,11 @@ describe('Phase 1 sync foundations', () => {
   it('updates the tracked primary and trashes only its duplicate when configured', async () => {
     const ctx = context();
     ctx.settings.deleteDuplicates = true;
-    const primary = Object.assign(new TFile(), { path: 'Readwise Plugin/Books/one.md' });
-    const duplicate = Object.assign(new TFile(), { path: 'Readwise Plugin/Books/one-copy.md' });
+    const primary = Object.assign(new TFile(), { path: 'Readwise Obsidian/Books/one.md' });
+    const duplicate = Object.assign(new TFile(), { path: 'Readwise Obsidian/Books/one-copy.md' });
     const trashFile = jest.fn(async () => {});
     ctx.app = {
-      vault: { process: jest.fn(async () => {}) },
+      vault: { process: jest.fn(async () => {}), cachedRead: jest.fn(async () => 'old content') },
       fileManager: { processFrontMatter: jest.fn(async () => {}), trashFile },
     } as unknown as PluginContext['app'];
     const frontmatterManager = {
@@ -188,15 +188,35 @@ describe('Phase 1 sync foundations', () => {
     expect(trashFile).not.toHaveBeenCalledWith(primary);
   });
 
+  it('rejects broken local markers before changing frontmatter', async () => {
+    const ctx = context();
+    const primary = Object.assign(new TFile(), { path: 'Readwise Obsidian/Books/one.md' });
+    const processFrontMatter = jest.fn(async () => {});
+    ctx.app = {
+      vault: { cachedRead: jest.fn(async () => '<!-- readwise-obsidian:local:start -->\nUnclosed') },
+      fileManager: { processFrontMatter },
+    } as unknown as PluginContext['app'];
+    const frontmatterManager = {
+      getFrontmatter: () => ({ entries: (): [string, unknown][] => [] }),
+    } as unknown as ConstructorParameters<typeof DeduplicatingVaultWriter>[1];
+    const writer = new DeduplicatingVaultWriter(ctx, frontmatterManager);
+
+    await expect(writer.process([{
+      type: 'base', primary, duplicates: [], basename: 'one',
+      doc: { id: 1 } as ReadwiseDocument, contents: 'new content', atoms: [],
+    }])).rejects.toThrow('missing or duplicate');
+    expect(processFrontMatter).not.toHaveBeenCalled();
+  });
+
   it('renames a note through Obsidian so its links can be updated', async () => {
     const ctx = context();
     const renameFile = jest.fn(async () => {});
     ctx.app = { fileManager: { renameFile } } as unknown as PluginContext['app'];
     jest.mocked(normalizeFilename).mockReturnValue('Clean');
-    const file = { basename: 'Unclean', name: 'Unclean.md', parent: { path: 'Readwise Plugin/Books' } } as TFile;
+    const file = { basename: 'Unclean', name: 'Unclean.md', parent: { path: 'Readwise Obsidian/Books' } } as TFile;
 
     expect(await new Controller({} as ReadwiseMirror, ctx).renameReadwiseNote(file)).toBe(true);
-    expect(renameFile).toHaveBeenCalledWith(file, 'Readwise Plugin/Books/Clean.md');
+    expect(renameFile).toHaveBeenCalledWith(file, 'Readwise Obsidian/Books/Clean.md');
   });
 
   it('creates the new mirror folder before its category folders', async () => {
@@ -213,6 +233,6 @@ describe('Phase 1 sync foundations', () => {
 
     await writer.createCategoryFolders(new Set(['books']));
 
-    expect(createFolder.mock.calls.map(([path]) => path)).toEqual(['Readwise Plugin', 'Readwise Plugin/Books']);
+    expect(createFolder.mock.calls.map(([path]) => path)).toEqual(['Readwise Obsidian', 'Readwise Obsidian/Books']);
   });
 });

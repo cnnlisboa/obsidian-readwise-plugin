@@ -6,7 +6,7 @@ import { getPluginCommands } from '../utils/plugin-commands';
 import type { Controller } from './controller';
 
 /**
- * Manages command registration for the Readwise Plugin
+ * Manages command registration for Readwise Obsidian
  */
 export class CommandManager {
   constructor(

@@ -1,6 +1,6 @@
 import md5 from 'md5';
 import { type ConfigureOptions, Environment, type ILoader, type ILoaderAny, Loader, type LoaderSource } from 'nunjucks';
-import { stringifyYaml } from 'obsidian';
+import { moment, stringifyYaml } from 'obsidian';
 import { YAML_INDENT } from 'src/constants';
 import type { Atom } from 'types/document';
 import { AtomizeExtension } from './atomizer';
@@ -59,7 +59,7 @@ export class ReadwiseEnvironment extends Environment {
    * Initialize custom filters for the Readwise environment
    */
   private setupFilters(): void {
-    registerCoreTemplateFilters(this, (date, format) => window.moment(date).format(format));
+    registerCoreTemplateFilters(this, (date, format) => moment(date).format(format));
 
     // Convert newlines to blockquotes
     this.addFilter('bq', (str: string) => {

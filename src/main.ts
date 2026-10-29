@@ -138,14 +138,6 @@ export default class ReadwiseMirror extends Plugin {
         this.notify.notice('Readwise: Controller initialization failed. Check console for details.');
       }
 
-      // Update status bar every second if synced
-      this.registerInterval(
-        window.setInterval(() => {
-          if (/Synced/.test(this.notify.getStatusBarText())) {
-            this.notify.setStatusBarText(`Readwise: Synced ${humanReadableFormat(this.settings.lastUpdated)}`);
-          }
-        }, 1000)
-      );
     } catch (error) {
       this.logger.error('Error during plugin initialization:', error);
     }

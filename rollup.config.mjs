@@ -31,10 +31,6 @@ export default {
   },
   external: [
     "obsidian",
-    "node:path",
-    // 2. Since Obsidian plugins run in an Electron app, MSW's browser code
-    // might look for global 'util' or standard Node internals. If you hit issues,
-    // you can explicitly externalize them or mock them via nodeResolve.
   ],
   plugins: [
     // 3. Inject the environment variables BEFORE compiling the code

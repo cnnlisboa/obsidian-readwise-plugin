@@ -56,6 +56,7 @@
   flex: 0 1 auto;
   /* Prevent text from wrapping inside buttons */
   white-space: nowrap;
+  min-height: 44px;
 }
 
 .settings-tab-button:hover {
@@ -67,10 +68,24 @@
   color: var(--text-normal);
   background-color: var(--interactive-accent);
   font-weight: bold;
+  border-bottom: 3px solid var(--text-normal);
 }
 
 .settings-tab-content {
   padding-top: 1rem;
+  min-width: 0;
+}
+
+.settings-tab-content textarea {
+  max-width: 100%;
+}
+
+@media (max-width: 480px) {
+  .settings-tab-button {
+    flex: 1 1 calc(50% - 0.5rem);
+    white-space: normal;
+    text-align: center;
+  }
 }
 
 .setting-item textarea#frontmatter-template.invalid-template {

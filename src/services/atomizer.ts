@@ -11,7 +11,7 @@
  * in a way that extracts the atomizer blocks, writes the individual files, and links them together by adding an embed block in the "parent" file.
  */
 
-import filenamify from 'filenamify';
+import filenamify from 'filenamify/browser';
 import * as nunjucks from 'nunjucks';
 import type { Atom } from 'types/document';
 import type { AtomizeOptions } from 'types/utilities';

@@ -24,5 +24,6 @@ module.exports = {
     '^src/(.*)$': '<rootDir>/src/$1',
     '^obsidian$': '<rootDir>/src/test/__mocks__/obsidian.ts',
     '^filenamify$': '<rootDir>/src/test/__mocks__/filenamify.ts',
+    '^filenamify/browser$': '<rootDir>/src/test/__mocks__/filenamify.ts',
   }
 };

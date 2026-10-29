@@ -76,6 +76,11 @@ export class DeduplicatingVaultWriter {
     });
   }
 
+  /** Files tracked under a Readwise URL, from the index built by buildTrackedFileIndex. */
+  public getTrackedFiles(url: string): TFile[] {
+    return this.trackedFileIndex.get(url) ?? [];
+  }
+
   public buildTrackedFileIndex(): void {
     this.trackedFileIndex = new Map();
     if (!this.ctx.settings.trackFiles || !this.ctx.settings.trackingProperty) return;

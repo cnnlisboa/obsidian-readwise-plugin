@@ -51,6 +51,7 @@ export function buildReadwiseDocument(
     source_url,
     unique_url,
     book_tags,
+    external_id,
   } = book;
 
   const filteredHighlights = filterHighlights(highlights, options.settings);
@@ -90,5 +91,6 @@ export function buildReadwiseDocument(
     highlight_tags: formatTags(highlightTags),
     tags_nohash: formatTags(book_tags, true, "'"),
     hl_tags_nohash: formatTags(highlightTags, true, "'"),
+    external_id: external_id ?? null,
   };
 }

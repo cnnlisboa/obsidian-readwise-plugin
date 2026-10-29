@@ -24,6 +24,8 @@ The Reader tab can sync full documents selected by an exact Reader tag, includin
 
 Optional [note write-back](docs/note-writeback.md) adds editable sections for Reader document notes and Readwise highlight notes. Sending changes is a separate, confirmed command.
 
+The Book notes tab writes a Readwise section into your own book notes: the document note, highlight embeds, and each comment below its highlight. Matching uses a book ID property or the title; your text outside the section is never changed. See [Book notes](docs/book-notes.md).
+
 ## Commands
 
 - `Sync new highlights`: Download all new highlights since previous update

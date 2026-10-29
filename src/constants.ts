@@ -22,6 +22,33 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   readerDownloadSourceFiles: true,
   readerDocumentTemplate: '# {{ title }}\n\n{% if author %}By {{ author }}\n\n{% endif %}{% if notes %}## Document note\n\n{{ notes }}\n\n{% endif %}## Content\n\n{{ content }}\n\n{% if highlights %}## Highlights\n\n{{ highlights }}{% endif %}',
   readerYamlTemplate: 'tags:\n  - readwise/reader',
+  readerTagRemoved: 'keep',
+  bookNotesEnabled: false,
+  bookNotesFolder: 'Books',
+  bookNotesCategories: 'books',
+  bookNoteIdProperty: 'readwise_book_id',
+  bookNoteMatchByTitle: true,
+  bookNoteStampId: true,
+  bookNoteCreateMissing: false,
+  bookNoteFilenameTemplate: '{{ title }}{% if author %} ({{ author }}){% endif %}',
+  bookNoteNewTemplate: '---\ntags:\n  - book\naliases:\n  - "{{ title }}"\n---\n\n# {{ title }}\n',
+  bookNoteSectionTemplate: `## Readwise
+{% if document_note %}
+### Document note
+
+{{ document_note }}
+{% endif %}
+### Highlights
+{% for h in highlights %}
+{{ h.display }}
+{%- if h.comment %}
+
+{{ h.comment }}
+{%- endif %}
+{% endfor %}
+Source: {{ readwise_link }}`,
+  bookNoteHighlightStyle: 'embed',
+  bookNoteDocumentNoteOnly: false,
   writebackReaderNotes: false,
   writebackHighlightNotes: false,
   highlightSortOldestToNewest: true,
@@ -170,3 +197,4 @@ export const YAML_INDENT: string = '  ';
 export const AUTHOR_SEPARATORS = /(?:,\s*and\s*)|(?:\s+and\s+)|(?:,\s*)/;
 export const READWISE_REVIEW_URL_BASE = 'https://readwise.io/bookreview/';
 export const READWISE_URI_FIELD = 'readwise_url';
+export const READWISE_EXTERNAL_ID_FIELD = 'readwise_external_id';

@@ -23,6 +23,7 @@ export function renderReaderFrontmatter(env: ReadwiseEnvironment, template: stri
     reader_url: document.url,
     reader_source_url: document.source_url ?? '',
     reader_updated_at: document.updated_at,
+    reader_sync_tag: selectedTag,
   };
   return `---\n${stringifyYaml(fields).trimEnd()}\n---\n\n`;
 }

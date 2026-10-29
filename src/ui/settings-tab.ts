@@ -22,6 +22,7 @@ import type { TemplateValidationResult } from 'types/utilities';
 import { WarningDialog } from 'ui/dialog';
 import { sanitizeFrontmatterTemplate, validateFrontmatterTemplate } from 'utils/frontmatter-utils';
 import { hasAtomizeBlocks } from 'utils/template-utils';
+import type { PluginSettings } from 'types/settings';
 
 interface SettingsTab {
   id: string;
@@ -279,6 +280,11 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
         id: 'reader',
         name: 'Reader',
         render: (container) => this.renderReaderSettings(container),
+      },
+      {
+        id: 'book-notes',
+        name: 'Book notes',
+        render: (container) => this.renderBookNoteSettings(container),
       },
       {
         id: 'frontmatter-template',
@@ -695,8 +701,20 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
         await this.ctx.saveAndApplySettings();
       }));
     new Setting(containerEl)
+      .setName('When a document loses the tag')
+      .setDesc('Applies to notes imported under the current reader tag. Trash keeps any note with local writing or unsent note edits and marks it instead.')
+      .addDropdown((dropdown) => dropdown
+        .addOption('keep', 'Keep the note')
+        .addOption('mark', 'Mark it with reader_tag_removed')
+        .addOption('trash', 'Move it to trash')
+        .setValue(this.ctx.settings.readerTagRemoved)
+        .onChange(async (value) => {
+          this.ctx.settings.readerTagRemoved = value as PluginSettings['readerTagRemoved'];
+          await this.ctx.saveAndApplySettings();
+        }));
+    new Setting(containerEl)
       .setName('Link matching highlight notes')
-      .setDesc('Match by exact source URL. Adds a link in each direction when one unambiguous Readwise note is found.')
+      .setDesc('Match by reader document ID, then by exact source URL. Adds a link in each direction when one unambiguous Readwise note is found.')
       .addToggle((toggle) => toggle.setValue(this.ctx.settings.readerLinkHighlights).onChange(async (value) => {
         this.ctx.settings.readerLinkHighlights = value;
         await this.ctx.saveAndApplySettings();
@@ -781,6 +799,144 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
       });
     yamlPreview = containerEl.createEl('pre', { cls: 'readwise-template-preview' });
     updateYamlPreview(this.ctx.settings.readerYamlTemplate);
+  }
+
+  private renderBookNoteSettings(containerEl: HTMLElement): void {
+    const settings = this.ctx.settings;
+    const save = async () => this.ctx.saveAndApplySettings();
+    const variables = (text: string, names: string) => createFragment((fragment) => {
+      fragment.appendText(`${text} Variables: `);
+      fragment.createEl('code', { text: names });
+    });
+    new Setting(containerEl).setName('Book notes').setHeading();
+    new Setting(containerEl)
+      .setName('Write into my book notes')
+      .setDesc('Add a Readwise section to your own note for each matching book. Text outside that section is never changed.')
+      .addToggle((toggle) => toggle.setValue(settings.bookNotesEnabled).onChange(async (value) => {
+        settings.bookNotesEnabled = value;
+        await save();
+      }));
+    new Setting(containerEl)
+      .setName('Book notes folder')
+      .setDesc('Vault-relative folder holding your book notes, searched including subfolders.')
+      .addText((text) => text.setValue(settings.bookNotesFolder).onChange(async (value) => {
+        settings.bookNotesFolder = value.trim();
+        await save();
+      }));
+    new Setting(containerEl)
+      .setName('Readwise categories')
+      .setDesc('Comma-separated categories routed to book notes, such as books, articles, or podcasts. Others only get their Readwise note.')
+      .addText((text) => text.setValue(settings.bookNotesCategories).onChange(async (value) => {
+        settings.bookNotesCategories = value;
+        await save();
+      }));
+
+    new Setting(containerEl).setName('Matching').setHeading();
+    new Setting(containerEl)
+      .setName('Book ID property')
+      .setDesc('A book note whose property equals the Readwise book ID always matches that book.')
+      .addText((text) => text.setValue(settings.bookNoteIdProperty).onChange(async (value) => {
+        settings.bookNoteIdProperty = value.trim() || 'readwise_book_id';
+        await save();
+      }));
+    new Setting(containerEl)
+      .setName('Match by title')
+      .setDesc('Otherwise compare the Readwise title, with and without its subtitle, to the filename (ignoring a trailing author in parentheses), the title property, and aliases. Several matches are skipped and reported.')
+      .addToggle((toggle) => toggle.setValue(settings.bookNoteMatchByTitle).onChange(async (value) => {
+        settings.bookNoteMatchByTitle = value;
+        await save();
+      }));
+    new Setting(containerEl)
+      .setName('Record the book ID after a title match')
+      .setDesc('Adds the book ID property, so later syncs match even if you rename the note.')
+      .addToggle((toggle) => toggle.setValue(settings.bookNoteStampId).onChange(async (value) => {
+        settings.bookNoteStampId = value;
+        await save();
+      }));
+    new Setting(containerEl)
+      .setName('Create missing book notes')
+      .setDesc('Create a note in the book notes folder when nothing matches.')
+      .addToggle((toggle) => toggle.setValue(settings.bookNoteCreateMissing).onChange(async (value) => {
+        settings.bookNoteCreateMissing = value;
+        await save();
+        this.display();
+      }));
+    if (settings.bookNoteCreateMissing) {
+      new Setting(containerEl)
+        .setName('New book note filename')
+        .setDesc(variables('Nunjucks template.', 'title, author, category, book_id'))
+        .addText((text) => text.setValue(settings.bookNoteFilenameTemplate).onChange(async (value) => {
+          settings.bookNoteFilenameTemplate = value;
+          await save();
+        }));
+      new Setting(containerEl)
+        .setName('New book note template')
+        .setDesc(variables('Initial contents, including YAML.', 'title, author, category, cover_image_url, source_url, readwise_url, book_id, book'))
+        .addTextArea((text) => {
+          text.setValue(settings.bookNoteNewTemplate).onChange(async (value) => {
+            settings.bookNoteNewTemplate = value;
+            await save();
+          });
+          text.inputEl.rows = 8;
+        });
+    }
+
+    new Setting(containerEl).setName('Content').setHeading();
+    new Setting(containerEl)
+      .setName('Document note only in the book note')
+      .setDesc('Leave the document note out of the Readwise note when a book note receives it.')
+      .addToggle((toggle) => toggle.setValue(settings.bookNoteDocumentNoteOnly).onChange(async (value) => {
+        settings.bookNoteDocumentNoteOnly = value;
+        await save();
+      }));
+    new Setting(containerEl)
+      .setName('Highlight display')
+      .setDesc('Used for each highlight\'s display value. Embeds point at the highlight\'s block in the Readwise note, which the default highlight template marks, or at its atomic highlight note.')
+      .addDropdown((dropdown) => dropdown
+        .addOption('embed', 'Embed')
+        .addOption('quote', 'Quoted text')
+        .addOption('link', 'Quoted text with link')
+        .setValue(settings.bookNoteHighlightStyle)
+        .onChange(async (value) => {
+          settings.bookNoteHighlightStyle = value as PluginSettings['bookNoteHighlightStyle'];
+          await save();
+          updatePreview(settings.bookNoteSectionTemplate);
+        }));
+
+    let previewEl: HTMLElement | undefined;
+    const updatePreview = (template: string) => {
+      if (!previewEl) return;
+      const embed = settings.bookNoteHighlightStyle === 'embed';
+      const sample = (id: number, text: string, note: string) => ({
+        id, text, note, location: 12, url: '', tags: [] as string[], embed: `![[Sample book#^${id}]]`, link: `[[Sample book#^${id}]]`,
+        quote: `> ${text}`, display: embed ? `![[Sample book#^${id}]]` : `> ${text}${settings.bookNoteHighlightStyle === 'link' ? `\n[[Sample book#^${id}]]` : ''}`,
+        comment: note,
+      });
+      try {
+        previewEl.setText(this.env.renderString(template, {
+          title: 'Sample book', author: 'Sample author', category: 'books', document_note: 'Why I read this book.',
+          summary: '', readwise_url: 'https://readwise.io/bookreview/1', source_url: '', tags: [] as string[],
+          readwise_link: '[[Sample book]]',
+          highlights: [sample(1, 'A first highlight.', 'My comment on it.'), sample(2, 'A second highlight.', '')],
+        }));
+      } catch (error) {
+        previewEl.setText(`Template error: ${this.getErrorMessage(error)}`);
+      }
+    };
+    new Setting(containerEl)
+      .setName('Readwise section template')
+      .setDesc(variables('Rendered between two marker comments, which you can move anywhere in the note. With editable highlight notes on, each comment is a writable block you can edit here or in the Readwise note.',
+        'title, author, category, document_note, summary, readwise_url, source_url, tags, readwise_link, book, highlights[].{id, text, note, location, url, tags, embed, link, quote, display, comment}'))
+      .addTextArea((text) => {
+        text.setValue(settings.bookNoteSectionTemplate).onChange(async (value) => {
+          settings.bookNoteSectionTemplate = value;
+          await save();
+          updatePreview(value);
+        });
+        text.inputEl.rows = 14;
+      });
+    previewEl = containerEl.createEl('pre', { cls: 'readwise-template-preview' });
+    updatePreview(settings.bookNoteSectionTemplate);
   }
 
   private renderAtomicHighlightsSettings(containerEl: HTMLElement): void {

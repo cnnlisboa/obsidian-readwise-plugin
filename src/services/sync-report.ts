@@ -1,4 +1,4 @@
-export type SyncAction = 'created' | 'updated' | 'marked duplicate' | 'trashed duplicate' | 'failed';
+export type SyncAction = 'created' | 'updated' | 'marked duplicate' | 'trashed duplicate' | 'untagged' | 'skipped' | 'failed';
 
 export interface SyncEvent {
   action: SyncAction;
@@ -17,6 +17,8 @@ export function createSyncReport(events: SyncEvent[]): SyncReport {
     updated: 0,
     'marked duplicate': 0,
     'trashed duplicate': 0,
+    untagged: 0,
+    skipped: 0,
     failed: 0,
   };
   for (const event of events) counts[event.action]++;
@@ -25,5 +27,5 @@ export function createSyncReport(events: SyncEvent[]): SyncReport {
 
 export function summarizeSyncReport(report: SyncReport): string {
   const { counts } = report;
-  return `${counts.created} created, ${counts.updated} updated, ${counts['marked duplicate']} marked, ${counts['trashed duplicate']} trashed`;
+  return `${counts.created} created, ${counts.updated} updated, ${counts['marked duplicate']} marked, ${counts['trashed duplicate']} trashed${counts.untagged ? `, ${counts.untagged} untagged` : ''}${counts.skipped ? `, ${counts.skipped} skipped` : ''}`;
 }

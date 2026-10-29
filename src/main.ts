@@ -10,7 +10,8 @@ import { FrontmatterManager } from 'services/frontmatter-manager';
 import Logger from 'services/logger';
 import { buildReadwiseDocument } from 'services/readwise-document-mapper';
 import { ReadwiseEnvironment, ReadwiseLoader } from 'services/readwise-environment';
-import { createSyncReport, type SyncReport } from 'services/sync-report';
+import { BookNoteIndex, planBookNotes, syncBookNotes, type BookLinkResolver } from 'services/book-notes';
+import { createSyncReport, type SyncEvent, type SyncReport } from 'services/sync-report';
 import { renderSyncLog, resolveSyncLogPath } from 'services/sync-log';
 import { syncReaderDocuments } from 'services/reader-sync';
 import { mergeEditableNotes } from 'services/writeback-sections';
@@ -302,6 +303,7 @@ export default class ReadwiseMirror extends Plugin {
         actions.push(`${this.app.vault.getFileByPath(target) ? 'Update or create collision for' : 'Create'} ${target}`);
       }
     }
+    if (this.settings.bookNotesEnabled) actions.push(...planBookNotes(new BookNoteIndex(this.ctx), this.env, this.settings, library));
     const prompt = createFragment((fragment) => {
       fragment.createEl('p', { text: `${actions.length} planned document actions. Review before writing to the vault.` });
       if (this.settings.atomicHighlights) fragment.createEl('p', { text: 'Atomic highlight files may also be created or updated.' });
@@ -369,6 +371,20 @@ export default class ReadwiseMirror extends Plugin {
     }
   }
 
+  /** Writes the managed Readwise section into personal book notes. Run after the Readwise notes exist. */
+  public async writeBookNotes(library: Library): Promise<SyncEvent[]> {
+    if (!this.settings.bookNotesEnabled) return [];
+    const writer = this.deduplicatingVaultWriter;
+    writer.buildTrackedFileIndex();
+    const links: BookLinkResolver = {
+      mirror: (book) => writer.getTrackedFiles(book.readwise_url)[0]
+        ?? this.app.vault.getFileByPath(normalizePath(`${writer.getCategoryPath(book.category)}/${this.getFileNameFromDoc(book)}.md`)),
+      atom: (highlight) => (this.settings.atomicHighlights ? writer.getTrackedFiles(highlight.readwise_url)[0] ?? null : null),
+      linktext: (file, sourcePath) => this.app.metadataCache.fileToLinktext(file, sourcePath, true),
+    };
+    return syncBookNotes(this.ctx, this.env, library, new BookNoteIndex(this.ctx), links);
+  }
+
   // Write a library of Readwise books to markdown files
   public async writeLibraryToMarkdown(library: Library): Promise<SyncReport> {
     this.logger.group('Write Library to Markdown');
@@ -395,7 +411,11 @@ export default class ReadwiseMirror extends Plugin {
       this.logger.time('process');
       const report = await this.deduplicatingVaultWriter.process(readwiseFiles);
       this.logger.timeEnd('process');
-      return report;
+      const bookEvents = await this.writeBookNotes(library);
+      const failed = bookEvents.find((event) => event.action === 'failed');
+      // A failed book note must keep the checkpoint where it is, so the book is fetched again next sync.
+      if (failed) throw new Error(`Book note failed at ${failed.path}: ${failed.detail ?? 'unknown error'}`);
+      return createSyncReport([...report.events, ...bookEvents]);
     } catch (err) {
       this.logger.error('Failed to process files batch', err);
       const failed = this.deduplicatingVaultWriter.getLastSyncReport().events.find((event) => event.action === 'failed');
@@ -424,6 +444,7 @@ export default class ReadwiseMirror extends Plugin {
     }
     const readwiseFiles: BaseFile[] = [];
     this.deduplicatingVaultWriter.buildTrackedFileIndex();
+    const bookNotes = this.settings.bookNotesEnabled && this.settings.bookNoteDocumentNoteOnly ? new BookNoteIndex(this.ctx) : null;
 
     // Get total number of records
     const booksTotal = Object.keys(library.books).length;
@@ -452,6 +473,8 @@ export default class ReadwiseMirror extends Plugin {
         basename,
         settings: this.settings,
       });
+      // The book note shows this document note instead
+      if (bookNotes?.receives(book)) doc.document_note = '';
 
       // Get the primary path for new file before checking for duplicates
       const readwisePrimary = normalizePath(

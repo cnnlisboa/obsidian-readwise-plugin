@@ -16,6 +16,19 @@ export interface PluginSettings {
   readerDownloadSourceFiles: boolean;
   readerDocumentTemplate: string;
   readerYamlTemplate: string;
+  readerTagRemoved: 'keep' | 'mark' | 'trash'; // What to do with a note whose Reader document lost the tag
+  bookNotesEnabled: boolean; // Write a Readwise section into matching personal book notes
+  bookNotesFolder: string; // Folder containing personal book notes
+  bookNotesCategories: string; // Comma-separated Readwise categories routed to book notes
+  bookNoteIdProperty: string; // Property linking a book note to its Readwise book ID
+  bookNoteMatchByTitle: boolean; // Fall back to filename, alias, or title property matching
+  bookNoteStampId: boolean; // Record the Readwise book ID on a note matched by title
+  bookNoteCreateMissing: boolean; // Create a book note when none matches
+  bookNoteFilenameTemplate: string;
+  bookNoteNewTemplate: string; // Initial contents for created book notes
+  bookNoteSectionTemplate: string; // Managed Readwise section inside the book note
+  bookNoteHighlightStyle: 'embed' | 'quote' | 'link';
+  bookNoteDocumentNoteOnly: boolean; // Omit the document note from the Readwise note when a book note receives it
   writebackReaderNotes: boolean;
   writebackHighlightNotes: boolean;
   highlightSortOldestToNewest: boolean; // Sort highlights chronologically from oldest to newest

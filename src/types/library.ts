@@ -14,6 +14,7 @@ export interface Export {
   readwise_url: string;
   source_url: string;
   asin: string | null;
+  external_id?: string | null; // Reader document ID for Reader-sourced books
   highlights: Highlight[];
 }
 

@@ -2,11 +2,12 @@ import { getFrontMatterInfo, normalizePath, requestUrl, TFile } from 'obsidian';
 import TurndownService from 'turndown';
 import type { ReadwiseEnvironment } from './readwise-environment';
 import { listTaggedReaderDocuments, type ReaderDocument } from './reader-api';
-import { LOCAL_END, LOCAL_START, preserveLocalSection } from './local-section';
+import { hasLocalWriting, LOCAL_END, LOCAL_START, preserveLocalSection } from './local-section';
 import { renderReaderFrontmatter } from './reader-frontmatter';
-import { mergeEditableNotes } from './writeback-sections';
+import { hasUnsentEdit, mergeEditableNotes, readEditableNotes } from './writeback-sections';
 import { createSyncReport, type SyncEvent, type SyncReport } from './sync-report';
 import type { PluginContext } from 'types/plugin-context';
+import { READWISE_EXTERNAL_ID_FIELD } from 'src/constants';
 import { normalizeFilename } from 'utils/file-utils';
 
 const LINK_START = '<!-- readwise-sync:reader-link:start -->';
@@ -87,9 +88,13 @@ async function contentMarkdown(ctx: PluginContext, document: ReaderDocument, fol
 }
 
 async function findHighlightNoteByBody(ctx: PluginContext, document: ReaderDocument, folder: string): Promise<TFile | undefined> {
-  if (!document.source_url) return undefined;
   const candidates = ctx.app.vault.getMarkdownFiles().filter((file) =>
     file.path.startsWith(`${ctx.settings.baseFolderName}/`) && !file.path.startsWith(`${folder}/`));
+  // Readwise records the Reader document ID as external_id; prefer it over URL matching.
+  const byId = candidates.filter((file) =>
+    ctx.app.metadataCache.getFileCache(file)?.frontmatter?.[READWISE_EXTERNAL_ID_FIELD] === document.id);
+  if (byId.length === 1) return byId[0];
+  if (byId.length > 1 || !document.source_url) return undefined;
   const matches: TFile[] = [];
   for (const file of candidates) {
     const metadata = ctx.app.metadataCache.getFileCache(file)?.frontmatter;
@@ -126,7 +131,15 @@ export async function syncReaderDocuments(ctx: PluginContext, env: ReadwiseEnvir
     const id: unknown = ctx.app.metadataCache.getFileCache(file)?.frontmatter?.reader_id;
     if (typeof id === 'string') existing.set(id, file);
   }
+  const tag = readerTag.trim();
+  const tagged = new Set(documents.map((document) => document.id));
+  // Only notes imported under the current tag are candidates, so changing the tag setting never trashes older imports.
+  const untagged = [...existing.entries()].filter(([id, file]) =>
+    !tagged.has(id) && ctx.app.metadataCache.getFileCache(file)?.frontmatter?.reader_sync_tag === tag).map(([, file]) => file);
   const actions = documents.map((document) => `${existing.has(document.id) ? 'Update' : 'Create'} ${notePath(folder, document, ctx)}`);
+  if (ctx.settings.readerTagRemoved !== 'keep') {
+    actions.push(...untagged.map((file) => `${ctx.settings.readerTagRemoved === 'trash' ? 'Trash (if it has no local writing)' : 'Mark as untagged'} ${file.path}`));
+  }
   if (ctx.settings.previewSync && !(await confirm(actions))) return createSyncReport([]);
   await ensureFolder(ctx, folder);
 
@@ -155,7 +168,7 @@ export async function syncReaderDocuments(ctx: PluginContext, env: ReadwiseEnvir
       const rendered = env.renderString(ctx.settings.readerDocumentTemplate, {
         ...document, content, source_file: sourceFile, highlight_link: highlightLink, highlights,
       });
-      const generated = `${renderReaderFrontmatter(env, ctx.settings.readerYamlTemplate, document, readerTag.trim())}${rendered.trim()}${sourceFile ? `\n\nSource file: ${sourceFile}` : ''}\n`;
+      const generated = `${renderReaderFrontmatter(env, ctx.settings.readerYamlTemplate, document, tag)}${rendered.trim()}${sourceFile ? `\n\nSource file: ${sourceFile}` : ''}\n`;
       const old = existing.get(document.id) ?? ctx.app.vault.getFileByPath(path);
       const oldContents = old ? await ctx.app.vault.cachedRead(old) : null;
       const withEditableNote = mergeEditableNotes(oldContents, generated,
@@ -179,6 +192,31 @@ export async function syncReaderDocuments(ctx: PluginContext, env: ReadwiseEnvir
     } catch (error) {
       events.push({ action: 'failed', path, detail: String(error) });
       ctx.logger.error(`Reader document sync failed at ${path}`, error);
+    }
+  }
+  if (ctx.settings.readerTagRemoved !== 'keep') {
+    for (const file of untagged) {
+      try {
+        const text = await ctx.app.vault.read(file);
+        const keep = ctx.settings.readerTagRemoved === 'mark' || readEditableNotes(text).some(hasUnsentEdit) ||
+          hasLocalWriting(text, ctx.settings.localSectionMode, ctx.settings.localSectionHeading);
+        if (keep) {
+          const marked = ctx.app.metadataCache.getFileCache(file)?.frontmatter?.reader_tag_removed === true;
+          if (!marked) {
+            await ctx.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+              frontmatter.reader_tag_removed = true;
+            });
+            events.push({ action: 'untagged', path: file.path,
+              detail: ctx.settings.readerTagRemoved === 'trash' ? 'Kept because it has local writing or unsent edits' : undefined });
+          }
+        } else {
+          await ctx.app.fileManager.trashFile(file);
+          events.push({ action: 'untagged', path: file.path, detail: 'Moved to trash' });
+        }
+      } catch (error) {
+        events.push({ action: 'failed', path: file.path, detail: String(error) });
+        ctx.logger.error(`Reader untagged handling failed at ${file.path}`, error);
+      }
     }
   }
   const report = createSyncReport(events);

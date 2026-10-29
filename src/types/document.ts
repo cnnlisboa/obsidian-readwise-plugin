@@ -59,6 +59,7 @@ export interface ReadwiseDocument {
   tags_nohash: string;
   hl_tags_nohash: string;
   linktext?: string; // Link to the note in obsidian, if tracked
+  external_id?: string | null; // Reader document ID for Reader-sourced books
 }
 
 export interface MetadataInput {

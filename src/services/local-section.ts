@@ -85,3 +85,9 @@ export function preserveLocalSection(
     ...(local === null ? [content] : newHeading.end < lines.length ? [content, ''] : [content]));
   return `${lines.join('\n').trimEnd()}\n`;
 }
+
+/** Whether a note holds any text in its preserved local section. */
+export function hasLocalWriting(existing: string, mode: LocalSectionMode, heading: string): boolean {
+  const content = mode === 'heading' ? findHeadingSection(existing, heading)?.content : markerContent(existing);
+  return Boolean(content?.trim()) || Boolean(markerContent(existing)?.trim());
+}

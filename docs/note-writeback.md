@@ -21,3 +21,4 @@ The [Readwise Book UPDATE endpoint](https://readwise.io/api_deets) lists title, 
 
 - [README](../README.md) — Plugin overview.
 - [Reader document sync](reader-sync.md) — Document import and templates.
+- [Book notes](book-notes.md) — Edit highlight comments from your book notes.

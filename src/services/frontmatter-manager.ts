@@ -1,7 +1,7 @@
 import { type FileManager, parseYaml, type TFile } from 'obsidian';
 import { Frontmatter, type FrontmatterData, FrontmatterError } from 'services/frontmatter';
 import { renderFrontmatterTemplate } from 'services/template-rendering';
-import { READWISE_URI_FIELD } from 'src/constants';
+import { READWISE_EXTERNAL_ID_FIELD, READWISE_URI_FIELD } from 'src/constants';
 import type { AtomicFile, BaseFile, ReadwiseDocument } from 'types/document';
 import type { PluginContext } from 'types/plugin-context';
 import type { ReadwiseEnvironment } from './readwise-environment';
@@ -42,6 +42,9 @@ export class FrontmatterManager {
           // Add tracking property if enabled
           if (this.settings.trackFiles)
             updatedFrontmatter.set(this.settings.trackingProperty, file.doc[READWISE_URI_FIELD]);
+          // Lets Reader document notes find this note by Reader ID instead of source URL
+          if (this.settings.trackFiles && file.doc.external_id)
+            updatedFrontmatter.set(READWISE_EXTERNAL_ID_FIELD, file.doc.external_id);
 
           // Only filter update if all conditions are fulfilled
           if (

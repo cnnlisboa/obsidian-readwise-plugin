@@ -29,26 +29,34 @@ export function readEditableNotes(contents: string): EditableNote[] {
   });
 }
 
-export function mergeEditableNotes(existing: string | null, generated: string, notes: { target: NoteTarget; text: string }[]): string {
+export function hasUnsentEdit(note: EditableNote): boolean {
+  return note.text.trim() !== note.baseline.trim();
+}
+
+/** Indexes existing writable sections and refuses to drop any unsent edit that is not regenerated. */
+export function previousEditableNotes(existing: string | null, incoming: NoteTarget[]): Map<NoteTarget, EditableNote> {
   const old = new Map(readEditableNotes(existing ?? '').map((note) => [note.target, note]));
-  const incoming = new Set(notes.map((note) => note.target));
-  if (!notes.length) {
-    if ([...old.values()].some((note) => note.text.trim() !== note.baseline.trim())) {
-      throw new Error('Unsent note edits would be removed. Send them before disabling write-back sections.');
-    }
-    return generated;
+  const targets = new Set(incoming);
+  if ([...old.values()].some((note) => !targets.has(note.target) && hasUnsentEdit(note))) {
+    throw new Error(incoming.length
+      ? 'An unsent note is no longer in the sync selection. Send it before changing the filter.'
+      : 'Unsent note edits would be removed. Send them before disabling write-back sections.');
   }
-  if ([...old.values()].some((note) => !incoming.has(note.target) && note.text.trim() !== note.baseline.trim())) {
-    throw new Error('An unsent note is no longer in the sync selection. Send it before changing the filter.');
-  }
-  const blocks = notes.map(({ target, text }) => {
-    const remote = text.trim();
-    const previous = old.get(target);
-    // A local edit stays in the vault until the user sends it or resolves the remote conflict.
-    const local = previous && previous.text.trim() !== previous.baseline.trim() ? previous.text.trim() : remote;
-    const baseline = previous && local !== remote ? previous.baseline : remote;
-    return `${startMarker(target, baseline)}\n${local}\n${endMarker(target)}`;
-  });
+  return old;
+}
+
+export function editableBlock(previous: EditableNote | undefined, target: NoteTarget, text: string): string {
+  const remote = text.trim();
+  // A local edit stays in the vault until the user sends it or resolves the remote conflict.
+  const local = previous && hasUnsentEdit(previous) ? previous.text.trim() : remote;
+  const baseline = previous && local !== remote ? previous.baseline : remote;
+  return `${startMarker(target, baseline)}\n${local}\n${endMarker(target)}`;
+}
+
+export function mergeEditableNotes(existing: string | null, generated: string, notes: { target: NoteTarget; text: string }[]): string {
+  const old = previousEditableNotes(existing, notes.map((note) => note.target));
+  if (!notes.length) return generated;
+  const blocks = notes.map(({ target, text }) => editableBlock(old.get(target), target, text));
   return `${generated.trimEnd()}\n\n## Notes to send to Readwise\n\n${blocks.join('\n\n')}\n`;
 }
 

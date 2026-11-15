@@ -13,6 +13,7 @@ import { ReadwiseEnvironment, ReadwiseLoader } from 'services/readwise-environme
 import { BookNoteIndex, planBookNotes, syncBookNotes, type BookLinkResolver } from 'services/book-notes';
 import { diffLines } from 'services/line-diff';
 import { createSyncReport, type SyncEvent, type SyncReport } from 'services/sync-report';
+import { activeIgnore, selectLibrary } from 'services/selective-sync';
 import { renderSyncLog, resolveSyncLogPath } from 'services/sync-log';
 import { syncReaderDocuments } from 'services/reader-sync';
 import { mergeEditableNotes } from 'services/writeback-sections';
@@ -26,6 +27,7 @@ import type { PluginContext } from 'types/plugin-context';
 import type { PluginSettings } from 'types/settings';
 import Notify from 'ui/notify';
 import { ConfirmDialog } from 'ui/dialog';
+import { SelectiveSyncModal } from 'ui/selective-sync-modal';
 import ReadwiseMirrorSettingTab from 'ui/settings-tab';
 import { normalizeFilename } from 'utils/file-utils';
 import { humanReadableFormat } from 'utils/format-utils';
@@ -40,6 +42,7 @@ export default class ReadwiseMirror extends Plugin {
   private env: ReadwiseEnvironment;
   private logger: Logger;
   private lock: Lock<string>;
+  private syncTimer?: number;
 
   constructor(app: App, manifest: PluginManifest) {
     super(app, manifest);
@@ -104,6 +107,7 @@ export default class ReadwiseMirror extends Plugin {
   }
 
   public onunload(): void {
+    if (this.syncTimer !== undefined) window.clearInterval(this.syncTimer);
     this.logger.debug('Readwise Sync unloaded.');
     this.lock.release('readwise-sync:loaded');
     super.onunload();
@@ -180,6 +184,7 @@ export default class ReadwiseMirror extends Plugin {
    * Applies the logger mode, and header and highlight templates from the current settings to the plugin instance.
    */
   private async applySettings() {
+    this.notify.setStatusBarMode(this.settings.statusBarMode);
     // Set logger debug mode
     this.logger.setDebugMode(this.settings.debugMode);
     try {
@@ -201,7 +206,13 @@ export default class ReadwiseMirror extends Plugin {
 
     // Re-initialize the ReadwiseController instance
     try {
-      await Controller.initialize(this, this.ctx);
+      const controller = await Controller.initialize(this, this.ctx);
+      if (this.syncTimer !== undefined) window.clearInterval(this.syncTimer);
+      this.syncTimer = undefined;
+      const minutes = Number(this.settings.syncIntervalMinutes);
+      if (Number.isFinite(minutes) && minutes >= 1 && minutes <= 1440) {
+        this.syncTimer = window.setInterval(() => { void controller.sync(); }, minutes * 60_000);
+      }
     } catch (error) {
       this.logger.error('Error initializing Readwise controller during settings apply:', error);
       this.notify.notice('Readwise: Controller initialization failed. Check console for details.');
@@ -342,6 +353,26 @@ export default class ReadwiseMirror extends Plugin {
       if (changes.length > 40) fragment.createEl('p', { text: `${changes.length - 40} more changed notes are not shown.` });
     });
     return new Promise((resolve) => new ConfirmDialog(this.app, 'Preview Readwise sync', prompt, resolve).open());
+  }
+
+  /** Applies saved exclusions, or lets the user choose the documents in this batch. */
+  public async chooseSyncDocuments(library: Library, showModal: boolean): Promise<Library | null> {
+    const ignored = this.settings.ignoredDocuments ?? {};
+    if (showModal) {
+      const result = await new Promise<import('ui/selective-sync-modal').SelectiveSyncResult | null>((resolve) =>
+        new SelectiveSyncModal(this.app, library, ignored, this.settings.selectiveSyncInitiallyChecked, resolve).open());
+      if (!result) return null;
+      this.settings.ignoredDocuments = result.ignoredDocuments;
+      await this.saveData(this.settings);
+      return selectLibrary(library, result.selectedIds);
+    }
+    const selected = new Set<number>();
+    for (const book of Object.values(library.books)) {
+      const key = String(book.user_book_id);
+      if (ignored[key]?.mode === 'untilChanged' && !activeIgnore(book, ignored[key])) delete ignored[key];
+      if (!activeIgnore(book, ignored[key])) selected.add(book.user_book_id);
+    }
+    return selectLibrary(library, selected);
   }
 
   public async syncReaderDocuments(full = false): Promise<SyncReport> {

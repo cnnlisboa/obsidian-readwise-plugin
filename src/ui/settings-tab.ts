@@ -108,11 +108,11 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
   }
 
   constructor(
-    plugin: ReadwiseMirror,
+    private readonly readwisePlugin: ReadwiseMirror,
     private ctx: PluginContext,
     private readonly env: ReadwiseEnvironment
   ) {
-    super(ctx.app, plugin);
+    super(ctx.app, readwisePlugin);
   }
 
   /**
@@ -624,6 +624,19 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName('Sync').setHeading();
 
     new Setting(containerEl)
+      .setName('Status bar widget')
+      .setDesc('Choose the full sync status, a compact clickable label, or hide the widget. Sync commands remain available when hidden.')
+      .addDropdown((dropdown) => dropdown
+        .addOption('full', 'Full')
+        .addOption('compact', 'Compact')
+        .addOption('hidden', 'Hidden')
+        .setValue(this.ctx.settings.statusBarMode)
+        .onChange(async (value) => {
+          this.ctx.settings.statusBarMode = value as PluginSettings['statusBarMode'];
+          await this.ctx.saveAndApplySettings();
+        }));
+
+    new Setting(containerEl)
       .setName('Auto sync when starting')
       .setDesc('Automatically syncs new highlights after opening Obsidian')
       .addToggle((toggle) =>
@@ -632,6 +645,46 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
           await this.ctx.saveAndApplySettings();
         })
       );
+
+    new Setting(containerEl)
+      .setName('Sync every X minutes')
+      .setDesc('Repeat the Readwise sync while Obsidian is open. Enter 0 to turn off repeated syncs. The startup sync setting is separate.')
+      .addText((text) => {
+        text.inputEl.type = 'number';
+        text.inputEl.min = '0';
+        text.inputEl.max = '1440';
+        text.inputEl.step = '1';
+        text.setValue(String(this.ctx.settings.syncIntervalMinutes)).onChange(async (value) => {
+          const minutes = Number(value);
+          if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) return;
+          this.ctx.settings.syncIntervalMinutes = minutes;
+          await this.ctx.saveAndApplySettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('Choose documents during sync')
+      .setDesc('Choose Readwise export documents on each ordinary sync. Reader document sync is separate. The selective sync command always opens this modal.')
+      .addToggle((toggle) => toggle.setValue(this.ctx.settings.selectiveSync).onChange(async (value) => {
+        this.ctx.settings.selectiveSync = value;
+        await this.ctx.saveAndApplySettings();
+      }));
+
+    new Setting(containerEl)
+      .setName('Selective sync now')
+      .setDesc('Fetch the full Readwise library and choose which documents to sync. Available regardless of the toggle above.')
+      .addButton((button) => button.setButtonText('Select documents').onClick(async () => {
+        const controller = await Controller.initialize(this.readwisePlugin, this.ctx);
+        await controller.sync(true);
+      }));
+
+    new Setting(containerEl)
+      .setName('Start with documents selected')
+      .setDesc('Default checkbox state when the selection modal opens. Ignored documents stay unselected.')
+      .addToggle((toggle) => toggle.setValue(this.ctx.settings.selectiveSyncInitiallyChecked).onChange(async (value) => {
+        this.ctx.settings.selectiveSyncInitiallyChecked = value;
+        await this.ctx.saveAndApplySettings();
+      }));
 
     new Setting(containerEl)
       .setName('Preview sync changes')

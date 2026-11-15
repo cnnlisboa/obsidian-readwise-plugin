@@ -8,7 +8,7 @@ import ReadwiseApi from 'services/readwise-api';
 import { filterHighlights } from 'services/template-rendering';
 import { sampleMetadata } from './sample-data';
 import type { ReadwiseDocument } from 'types/document';
-import type { Export } from 'types/library';
+import type { Export, Library } from 'types/library';
 import type { PluginContext } from 'types/plugin-context';
 import { normalizeFilename } from 'utils/file-utils';
 
@@ -104,7 +104,10 @@ describe('Phase 1 sync foundations', () => {
     const ctx = context();
     ctx.settings.lastUpdated = '2026-01-01T00:00:00.000Z';
     ctx.settings.logFile = false;
-    const plugin = { writeLibraryToMarkdown: jest.fn<() => Promise<void>>().mockRejectedValue(new Error('disk full')) } as unknown as ReadwiseMirror;
+    const plugin = {
+      chooseSyncDocuments: jest.fn(async (library: Library) => library),
+      writeLibraryToMarkdown: jest.fn<() => Promise<void>>().mockRejectedValue(new Error('disk full')),
+    } as unknown as ReadwiseMirror;
     const controller = new Controller(plugin, ctx);
     (controller as unknown as { api: { downloadUpdates: () => Promise<unknown> } }).api = {
       downloadUpdates: async () => ({ books: {}, categories: new Set(), highlightCount: 0 }),
@@ -124,7 +127,10 @@ describe('Phase 1 sync foundations', () => {
     ctx.settings.lastUpdated = '2026-01-01T00:00:00.000Z';
     ctx.settings.logFile = false;
     ctx.saveAndApplySettings = jest.fn<() => Promise<void>>().mockRejectedValue(new Error('settings unavailable'));
-    const plugin = { writeLibraryToMarkdown: jest.fn(async () => {}) } as unknown as ReadwiseMirror;
+    const plugin = {
+      chooseSyncDocuments: jest.fn(async (library: Library) => library),
+      writeLibraryToMarkdown: jest.fn(async () => {}),
+    } as unknown as ReadwiseMirror;
     const controller = new Controller(plugin, ctx);
     (controller as unknown as { api: { downloadUpdates: () => Promise<unknown> } }).api = {
       downloadUpdates: async () => ({ books: {}, categories: new Set(), highlightCount: 0 }),

@@ -151,6 +151,11 @@ export function getPluginCommands(ctr: Controller, ctx: PluginContext, plugin: R
       callback: async () => await ctr.sync(),
     },
     {
+      id: 'selective-sync',
+      name: 'Selective sync: choose Readwise documents',
+      callback: async () => await ctr.sync(true),
+    },
+    {
       id: 'adjust-filenames',
       name: 'Adjust Filenames to current settings',
       checkCallback: (checking: boolean) => {

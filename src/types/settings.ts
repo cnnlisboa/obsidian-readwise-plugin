@@ -5,6 +5,11 @@ export interface PluginSettings {
   failedBookIds: number[]; // Readwise books whose last write failed, for the retry command
   readerLastSync: string | null; // Start of the last successful incremental Reader sync
   autoSync: boolean; // Whether to automatically sync on startup
+  syncIntervalMinutes: number; // 0 disables repeated syncs
+  selectiveSync: boolean; // Review document selection during ordinary library syncs
+  selectiveSyncInitiallyChecked: boolean;
+  ignoredDocuments: Record<string, IgnoredDocument>;
+  statusBarMode: 'full' | 'compact' | 'hidden'; // Status bar widget display
   previewSync: boolean; // Review planned vault changes before writing
   preserveLocalSection: boolean; // Keep the editable local section across syncs
   localSectionMode: 'markers' | 'heading';
@@ -75,4 +80,14 @@ export interface PluginSettings {
   atomicParentProperty: string; // `Parent`property
   atomicInheritParentFrontmatter: boolean; // Inherit parent frontmatter
   atomicConditionalAtomize: boolean; // Only atomize notes with a specific property set
+}
+
+export interface IgnoredDocument {
+  mode: 'untilChanged' | 'always';
+  signature: string;
+  title: string;
+  author: string;
+  category: string;
+  cover: string;
+  highlightCount: number;
 }

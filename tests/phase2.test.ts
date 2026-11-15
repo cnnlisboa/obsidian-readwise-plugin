@@ -7,6 +7,7 @@ import { createSyncReport, summarizeSyncReport } from 'services/sync-report';
 import { Controller } from 'services/controller';
 import type ReadwiseMirror from 'main';
 import type { PluginContext } from 'types/plugin-context';
+import type { Library } from 'types/library';
 
 jest.mock('obsidian', () => ({ normalizePath: (path: string) => path }));
 jest.mock('utils/file-utils', () => ({ getTrackingUrl: jest.fn(), isFileInFolder: jest.fn(), normalizeFilename: jest.fn() }));
@@ -71,6 +72,7 @@ describe('Phase 2 output controls', () => {
       notice: jest.fn(), setStatusBarText: jest.fn(), saveAndApplySettings: jest.fn(),
     } as unknown as PluginContext;
     const plugin = {
+      chooseSyncDocuments: jest.fn(async (library: Library) => library),
       confirmSyncPreview: jest.fn(async () => false),
       writeLibraryToMarkdown: jest.fn(),
     } as unknown as ReadwiseMirror;
@@ -84,6 +86,33 @@ describe('Phase 2 output controls', () => {
 
     expect(plugin.writeLibraryToMarkdown).not.toHaveBeenCalled();
     expect(ctx.settings.lastUpdated).toBe('2026-01-01T00:00:00.000Z');
+    validation.mockRestore();
+  });
+
+  it('cancels selective sync without writing or advancing the checkpoint', async () => {
+    const lastUpdated = '2026-01-01T00:00:00.000Z';
+    const ctx = {
+      settings: { ...DEFAULT_SETTINGS, lastUpdated, syncNotifications: false },
+      syncLock: { isAcquired: () => false, acquire: async () => {}, release: () => {} },
+      logger: { error: jest.fn(), debug: jest.fn() },
+      notice: jest.fn(), setStatusBarText: jest.fn(), saveAndApplySettings: jest.fn(),
+    } as unknown as PluginContext;
+    const plugin = {
+      chooseSyncDocuments: jest.fn(async () => null),
+      writeLibraryToMarkdown: jest.fn(),
+    } as unknown as ReadwiseMirror;
+    const controller = new Controller(plugin, ctx);
+    (controller as unknown as { api: { downloadFullLibrary: () => Promise<Library> } }).api = {
+      downloadFullLibrary: async () => ({ books: {}, categories: new Set(), highlightCount: 0 }),
+    };
+    const validation = jest.spyOn(Controller, 'validateAPIInstance').mockResolvedValue(true);
+
+    await controller.sync(true);
+
+    expect(plugin.chooseSyncDocuments).toHaveBeenCalledWith(expect.any(Object), true);
+    expect(plugin.writeLibraryToMarkdown).not.toHaveBeenCalled();
+    expect(ctx.settings.lastUpdated).toBe(lastUpdated);
+    expect(ctx.setStatusBarText).toHaveBeenCalledWith(expect.stringContaining('Readwise: Updated'));
     validation.mockRestore();
   });
 });

@@ -75,7 +75,14 @@ export class Controller {
     }
   }
 
-  public async sync() {
+  private restoreStatusBar(): void {
+    const lastUpdated = this.ctx.settings.lastUpdated;
+    this.ctx.setStatusBarText(lastUpdated
+      ? `Readwise: Updated ${humanReadableFormat(lastUpdated)}`
+      : 'Readwise: Click to Sync');
+  }
+
+  public async sync(selective = false) {
     // Equivalent to plugin.sync()
     if (this.ctx.syncLock?.isAcquired('library-sync')) {
       this.ctx.notice('Sync already in progress');
@@ -86,7 +93,7 @@ export class Controller {
       // A change made while a long sync is running must still be eligible next time.
       const syncStartedAt = new Date().toISOString();
       let library: Library;
-      if (!this.ctx.settings.lastUpdated) {
+      if (!this.ctx.settings.lastUpdated || selective) {
         if (this.ctx.settings.syncNotifications) this.ctx.notice('Readwise: Downloading full Readwise library');
         if (!(await Controller.validateAPIInstance())) {
           this.ctx.notice('Readwise: Network connection and valid API Token required');
@@ -105,10 +112,18 @@ export class Controller {
         }
         library = await this.api.downloadUpdates(this.ctx.settings.lastUpdated);
       }
-      // ...existing filtering and writing logic...
+      const choosingDocuments = selective || this.ctx.settings.selectiveSync;
+      const selectedLibrary = await this.plugin.chooseSyncDocuments(library, choosingDocuments);
+      if (!selectedLibrary) {
+        this.ctx.notice('Readwise: Sync cancelled.');
+        this.restoreStatusBar();
+        return;
+      }
+      library = selectedLibrary;
       this.prepareAtomicHighlightsCategory(library);
       if (this.ctx.settings.previewSync && !(await this.plugin.confirmSyncPreview(library))) {
         this.ctx.notice('Readwise: Sync cancelled.');
+        this.restoreStatusBar();
         return;
       }
       const report = await this.plugin.writeLibraryToMarkdown(library);
@@ -123,7 +138,7 @@ export class Controller {
       }
       this.ctx.setStatusBarText(`Readwise: Synced ${humanReadableFormat(this.ctx.settings.lastUpdated)}`);
       if (this.ctx.settings.syncNotifications) this.ctx.notice(`Readwise: Sync complete. ${summarizeSyncReport(report)}`);
-      if (this.ctx.settings.readerEnabled) {
+      if (this.ctx.settings.readerEnabled && !choosingDocuments) {
         try {
           const readerReport = await this.plugin.syncReaderDocuments();
           if (this.ctx.settings.syncNotifications) this.ctx.notice(`Reader: Sync complete. ${summarizeSyncReport(readerReport)}`);

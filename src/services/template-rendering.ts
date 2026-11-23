@@ -8,7 +8,7 @@ import { escapeMetadata } from 'utils/metadata-escape-utils';
 type RenderSettings = Pick<
   PluginSettings,
   'highlightSortByLocation' | 'highlightSortOldestToNewest' | 'highlightDiscard' | 'syncNotesOnly' | 'highlightTagFilter' | 'highlightFilterTags'
->;
+> & Partial<Pick<PluginSettings, 'groupByChapters' | 'chapterHeadingBase'>>;
 
 export class TemplateSourceLoader extends Loader implements ILoader {
   constructor(private templates: Record<string, string> = {}) {
@@ -91,6 +91,30 @@ export interface RenderHighlight {
   highlighted_at: string;
   tags: string;
   category: string;
+  /** Set for chapter heading highlights when chapters are grouped: "## Title". */
+  heading_prefix?: string;
+  /** Your text after the ".h2" line of a heading highlight (a chapter note). */
+  heading_note?: string;
+}
+
+/** Heading level (1-3) of a chapter heading highlight, or 0. */
+export function headingLevel(highlight: Pick<Highlight, 'tags' | 'note'>): number {
+  for (const tag of highlight.tags ?? []) {
+    const match = /^h([123])$/i.exec(tag.name.trim());
+    if (match) return Number(match[1]);
+  }
+  const fromNote = /^\s*\.h([123])\b/i.exec(highlight.note ?? '');
+  return fromNote ? Number(fromNote[1]) : 0;
+}
+
+/** The note of a heading highlight without its ".hN" / ".tag" tokens. */
+export function chapterNoteText(note: string | null | undefined): string {
+  return (note ?? '')
+    .split('\n')
+    .map((line) => line.replace(/(^|\s)\.[\w/-]+/g, '$1').trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
 }
 
 export function formatDate(dateStr: string): string {
@@ -197,10 +221,20 @@ export function renderMarkdownTemplate(
   loader.setSource('file', NUNJUCKS_CORE_TEMPLATE);
   const filteredHighlights = filterHighlights(params.highlights, params.settings);
 
+  const grouped = params.settings.groupByChapters === true;
+  const base = Math.min(Math.max(params.settings.chapterHeadingBase ?? 1, 1), 4);
   return env.render('file', {
     doc: params.doc,
     book: params.book,
-    highlights: sortHighlights(filteredHighlights, params.settings).map((hl) => formatHighlight(hl, params.book)),
+    highlights: sortHighlights(filteredHighlights, params.settings).map((hl) => {
+      const rendered = formatHighlight(hl, params.book);
+      const level = grouped ? headingLevel(hl) : 0;
+      if (level) {
+        rendered.heading_prefix = '#'.repeat(Math.min(level + base - 1, 6));
+        rendered.heading_note = chapterNoteText(hl.note);
+      }
+      return rendered;
+    }),
     headerTemplate: params.headerTemplate,
     highlightTemplate: params.highlightTemplate,
   });

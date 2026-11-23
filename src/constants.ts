@@ -1,6 +1,41 @@
 import type { PluginSettings } from 'types/settings';
+import { DEFAULT_RULES } from 'services/highlight-rules-defaults';
 
 export const DEFAULT_SETTINGS: PluginSettings = {
+  rulesEnabled: false,
+  rulesDryRun: true,
+  rulesGraceDays: 3,
+  rulesProcessedTag: 'rw-processed',
+  highlightRules: DEFAULT_RULES,
+  processedHighlights: {},
+  chapterNotesEnabled: true,
+  showEditButton: true,
+  groupByChapters: false,
+  chapterHeadingBase: 1,
+  booksEnabled: false,
+  booksNoteFolder: 'Inventory/Books',
+  booksPropertyNames: {
+    status: 'status', rating: 'rating', start: 'start', finished: 'finished',
+    format: 'format', pages: 'pages', id: 'readwiseBooksID', isbn: 'isbn',
+  },
+  booksStatusMap: {
+    New: '', Backlog: 'want_to_read', Next: 'want_to_read', Active: 'currently_reading',
+    Done: 'finished', Stopped: 'did_not_finish', Seed: '', Review: '',
+  },
+  booksFinishedStatus: 'Done',
+  booksFormats: true,
+  booksHighlightsProperty: 'highlights',
+  booksBookProperty: 'book',
+  booksState: {},
+  booksPendingPatches: [],
+  booksSuggest: true,
+  booksSuggestShelves: ['currently_reading'],
+  booksSuggestExcluded: [],
+  booksSuggestBaselineDone: false,
+  booksSuggestQuery: 'isbn',
+  booksFallbackTemplate: '-/Templates/Notes/Book.md',
+  booksAutoPushNew: false,
+  booksLastSync: null,
   atomicHighlights: false,
   atomicParentProperty: 'rw-parent',
   atomicInheritParentFrontmatter: false,
@@ -198,7 +233,12 @@ export const NUNJUCKS_CORE_TEMPLATE = `{%- block header -%}
     {%- set highlighted_at = highlight.highlighted_at | date("YYYY-MM-DD") %}
     {%- set tags = highlight.tags %}
     {%- set category = book.category -%}
+  {%- if highlight.heading_prefix -%}
+  {{ "\\n\\n" + highlight.heading_prefix + " " + highlight.text }}
+  {%- if highlight.heading_note %}{{ "\\n\\n" + highlight.heading_note }}{% endif %}{{ "\\n" }}
+  {%- else -%}
   {% include highlightTemplate ignore missing %}
+  {%- endif -%}
   {%- endfor -%}
 {%- endblock highlights -%}`;
 // YAML options

@@ -4,6 +4,7 @@ import { getTrackingUrl, isFolderInReadwiseLibrary } from 'utils/file-utils';
 import type { PluginContext } from '../types/plugin-context';
 import { getPluginCommands } from '../utils/plugin-commands';
 import type { Controller } from './controller';
+import { EditHighlightModal } from '../ui/edit-highlight-modal';
 
 /**
  * Manages command registration for Readwise Sync
@@ -41,6 +42,21 @@ export class CommandManager {
     );
 
     this.plugin.registerDomEvent(this.ctx.statusBarItem, 'click', async () => await this.ctr.sync());
+
+    // ✏️ next to each Readwise highlight link in reading view.
+    this.plugin.registerMarkdownPostProcessor((element) => {
+      if (!this.ctx.settings.showEditButton) return;
+      for (const link of Array.from(element.querySelectorAll('a[href^="https://readwise.io/open/"]'))) {
+        const id = Number(/open\/(\d+)/.exec(link.getAttribute('href') ?? '')?.[1]);
+        if (!id || link.nextElementSibling?.classList.contains('readwise-edit-button')) continue;
+        const button = createEl('a', { text: ' ✏️', cls: 'readwise-edit-button', attr: { 'aria-label': 'Edit in Readwise' } });
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          new EditHighlightModal(this.ctx, id, () => this.ctr.sync()).open();
+        });
+        link.after(button);
+      }
+    });
   }
 
   public runStartupCommands(): void {

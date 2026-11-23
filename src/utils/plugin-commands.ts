@@ -6,6 +6,8 @@ import type ReadwiseMirror from 'main';
 import { summarizeSyncReport } from '../services/sync-report';
 import { inspectNote, SyncInspectorModal } from '../ui/sync-inspector';
 import { humanReadableFormat } from './format-utils';
+import { PendingDeletionsModal } from '../ui/pending-deletions-modal';
+import { EditHighlightModal, highlightIdNear } from '../ui/edit-highlight-modal';
 
 function toErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -29,6 +31,84 @@ function toErrorMessage(err: unknown): string {
  */
 export function getPluginCommands(ctr: Controller, ctx: PluginContext, plugin: ReadwiseMirror): Command[] {
   return [
+    {
+      id: 'readwise-books-migrate-consumed',
+      name: 'Move "consumed" into "format" in book notes',
+      callback: () => {
+        void plugin.migrateConsumedProperty().catch((error: unknown) => {
+          ctx.notice(`Readwise Books: ${toErrorMessage(error)}`);
+        });
+      },
+    },
+    {
+      id: 'edit-highlight-under-cursor',
+      name: 'Edit Readwise highlight under cursor',
+      editorCheckCallback: (checking, editor) => {
+        const lines = editor.getValue().split('\n');
+        const id = highlightIdNear(lines, editor.getCursor().line);
+        if (id === null) return false;
+        if (!checking) new EditHighlightModal(ctx, id, () => ctr.sync()).open();
+        return true;
+      },
+    },
+    {
+      id: 'highlight-rules-run',
+      name: 'Run highlight rules now (whole library)',
+      callback: () => {
+        void ctr.runRulesOnFullLibrary().catch((error: unknown) => {
+          ctx.notice(`Readwise rules: ${toErrorMessage(error)}`);
+        });
+      },
+    },
+    {
+      id: 'highlight-rules-review',
+      name: 'Review highlights waiting to be deleted',
+      callback: () => {
+        const pending = plugin.pendingRuleDeletions();
+        new PendingDeletionsModal(ctx, pending, (id) => plugin.keepProcessedHighlight(id)).open();
+      },
+    },
+    {
+      id: 'readwise-books-sync',
+      name: 'Sync book notes with Readwise Books now',
+      callback: () => {
+        void plugin.syncReadwiseBooks(true).catch((error: unknown) => {
+          ctx.logger.error('Readwise Books sync failed', error);
+          ctx.notice(`Readwise Books: Sync failed. ${toErrorMessage(error)}`);
+        });
+      },
+    },
+    {
+      id: 'readwise-books-suggestions',
+      name: 'Show book note suggestions',
+      callback: () => {
+        void plugin.refreshAndShowBookSuggestions().catch((error: unknown) => {
+          ctx.notice(`Readwise Books: ${toErrorMessage(error)}`);
+        });
+      },
+    },
+    {
+      id: 'readwise-books-exclude-current',
+      name: 'Stop suggesting notes for all current Readwise Books',
+      callback: () => {
+        void plugin.excludeAllCurrentBooks().catch((error: unknown) => {
+          ctx.notice(`Readwise Books: ${toErrorMessage(error)}`);
+        });
+      },
+    },
+    {
+      id: 'readwise-books-add-current',
+      name: 'Add this book to Readwise Books',
+      checkCallback: (checking) => {
+        const file = ctx.app.workspace.getActiveFile();
+        const folder = ctx.settings.booksNoteFolder.replace(/\/$/, '') + '/';
+        if (!(file instanceof TFile) || !file.path.startsWith(folder)) return false;
+        if (!checking) void plugin.addActiveNoteToBooks(file).catch((error: unknown) => {
+          ctx.notice(`Readwise Books: ${toErrorMessage(error)}`);
+        });
+        return true;
+      },
+    },
     {
       id: 'send-edited-notes',
       name: 'Send edited notes to Readwise',

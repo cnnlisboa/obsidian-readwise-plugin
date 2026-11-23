@@ -80,6 +80,48 @@ export interface PluginSettings {
   atomicParentProperty: string; // `Parent`property
   atomicInheritParentFrontmatter: boolean; // Inherit parent frontmatter
   atomicConditionalAtomize: boolean; // Only atomize notes with a specific property set
+
+  rulesEnabled: boolean; // Tag-triggered highlight rules
+  rulesDryRun: boolean; // Never delete processed highlights while on
+  rulesGraceDays: number;
+  rulesProcessedTag: string;
+  highlightRules: import('services/highlight-rules-defaults').HighlightRule[];
+  processedHighlights: Record<string, import('services/highlight-rules').ProcessedRecord>;
+  chapterNotesEnabled: boolean; // Copy chapter notes into book notes
+  showEditButton: boolean; // ✏️ next to highlight links in reading view
+  groupByChapters: boolean; // Render h1/h2/h3 heading highlights as headings in highlights notes
+  chapterHeadingBase: number; // Markdown level used for an h1 chapter (h2 = base + 1 ...)
+
+  // ---- Readwise Books (PLAN-readwise-books.md)
+  booksEnabled: boolean; // Sync personal book notes with Readwise Books
+  booksNoteFolder: string; // Where personal book notes live
+  booksPropertyNames: BooksPropertyNamesSetting;
+  booksStatusMap: Record<string, string>; // Obsidian status -> shelf ('' = not synced)
+  booksFinishedStatus: string; // Written once when a book is finished
+  booksFormats: boolean; // Add formats implied by Readwise (add-only)
+  booksHighlightsProperty: string; // Book note -> highlights note link
+  booksBookProperty: string; // Highlights note -> book note link
+  booksState: Record<string, import('services/books-model').BookSyncState>;
+  booksPendingPatches: import('services/books-model').BookPatch[];
+  booksSuggest: boolean; // Offer to create notes for books without one
+  booksSuggestShelves: string[];
+  booksSuggestExcluded: number[];
+  booksSuggestBaselineDone: boolean;
+  booksSuggestQuery: 'isbn' | 'title';
+  booksFallbackTemplate: string; // Used when Book Search isn't available
+  booksAutoPushNew: boolean; // Add notes with a mapped status but no Books id to Readwise Books at sync
+  booksLastSync: string | null;
+}
+
+export interface BooksPropertyNamesSetting {
+  status: string;
+  rating: string;
+  start: string;
+  finished: string;
+  format: string;
+  pages: string;
+  id: string;
+  isbn: string;
 }
 
 export interface IgnoredDocument {

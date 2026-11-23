@@ -26,6 +26,8 @@ Optional [note write-back](docs/note-writeback.md) adds editable sections for Re
 
 The Book notes tab writes a Readwise section into your own book notes: the document note, highlight embeds, and each comment below its highlight. Routes send each Readwise category to its own folder of notes. Matching uses a book ID property or the title; your text outside the section is never changed. See [Book notes](docs/book-notes.md). Moving from the original plugin is covered in [Migrating from Readwise Mirror](docs/migration.md).
 
+The Readwise Books tab syncs status, rating, dates and pages between your book notes and Readwise Books, and suggests notes for books you're reading. The Rules and chapters tab turns tagged highlights (`reference/book`, …) into notes, copies chapter notes into book notes, and can group highlights by chapter. A ✏️ next to each highlight edits it in Readwise. See [Readwise Books, highlight rules and chapters](docs/readwise-books.md).
+
 ## Commands
 
 - `Sync new highlights`: Download all new highlights since previous update
@@ -43,6 +45,14 @@ The Book notes tab writes a Readwise section into your own book notes: the docum
 - `Update all readwise note frontmatter`: Scan all notes in your Readwise library folder and update their frontmatter according to your current frontmatter template and protection settings, without changing note content or filename. Useful after changing your frontmatter template or protection settings. Available only if file tracking and frontmatter are enabled.
 
 - `Update current note`: Update the currently opened Readwise note using its tracking property. Available only for notes in the Readwise Library folder when file tracking is enabled. Pro tip: Use this to quickly test template or filename changes before rebuilding your entire Readwise library.
+
+- `Sync book notes with Readwise Books now`: Compare book notes with Readwise Books and send or fill changes
+- `Show book note suggestions`: Readwise Books entries on the chosen shelves that have no book note
+- `Stop suggesting notes for all current Readwise Books`: Only suggest books added from now on
+- `Add this book to Readwise Books`: Create the Readwise Books entry for the open book note
+- `Run highlight rules now (whole library)`: Apply highlight rules and chapter notes to every highlight
+- `Review highlights waiting to be deleted`: Processed highlights in their grace period, with Keep in Readwise
+- `Edit Readwise highlight under cursor`: Edit the text, note and tags of the highlight at the cursor
 
 ## Settings
 

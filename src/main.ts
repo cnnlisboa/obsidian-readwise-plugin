@@ -27,6 +27,15 @@ import type { PluginContext } from 'types/plugin-context';
 import type { PluginSettings } from 'types/settings';
 import Notify from 'ui/notify';
 import { ConfirmDialog } from 'ui/dialog';
+import { BooksApi } from 'services/books-api';
+import { addNotesToBooks, findSuggestions, syncReadwiseBookNotes } from 'services/book-note-sync';
+import { createBookNote } from 'services/book-note-creator';
+import type { BooksBook } from 'services/books-model';
+import { authorFromSource, identityFromFilename, migrateConsumed, readList, readNote } from 'services/books-model';
+import { BookSuggestionsModal } from 'ui/book-suggestions-modal';
+import { HighlightRulesEngine, type RulesReport } from 'services/highlight-rules';
+import { matchNotes } from 'services/books-model';
+import { Notice } from 'obsidian';
 import { SelectiveSyncModal } from 'ui/selective-sync-modal';
 import ReadwiseMirrorSettingTab from 'ui/settings-tab';
 import { normalizeFilename } from 'utils/file-utils';
@@ -164,7 +173,10 @@ export default class ReadwiseMirror extends Plugin {
 
     // Mutate the existing object instead of creating a new reference
     // Order matters: defaults first, then loaded values override them
-    Object.assign(this.settings, DEFAULT_SETTINGS, loaded ?? {});
+    // Deep copies of the defaults, so editing nested settings (rules, status
+    // map, property names) never changes the shared default objects.
+    Object.assign(this.settings, structuredClone(DEFAULT_SETTINGS), loaded ?? {});
+    this.settings.booksPropertyNames = { ...DEFAULT_SETTINGS.booksPropertyNames, ...(loaded?.booksPropertyNames ?? {}) };
 
     if (this.lock.isAcquired('readwise-sync:loaded')) {
       await this.applySettings();
@@ -761,6 +773,228 @@ export default class ReadwiseMirror extends Plugin {
         return false;
       }
     }
+  }
+
+  // ---------------------------------------------------------- Highlight rules
+
+  private rulesEngine(): HighlightRulesEngine {
+    return new HighlightRulesEngine(this.ctx, this.env, {
+      highlightsNote: (book) => this.findHighlightsNote(book)?.basename ?? null,
+      bookNote: (book) => this.findBookNote(book),
+    });
+  }
+
+  /** The Readwise highlights note of a book, by its tracking property. */
+  private findHighlightsNote(book: Export): TFile | null {
+    const tracking = this.settings.trackingProperty;
+    const review = `https://readwise.io/bookreview/${book.user_book_id}`;
+    const prefix = normalizePath(this.settings.baseFolderName) + '/';
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!file.path.startsWith(prefix)) continue;
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (fm && (fm[tracking] === review || String(fm[tracking]) === String(book.user_book_id))) return file;
+    }
+    return null;
+  }
+
+  /** The personal book note: via the highlights note's link, else by title. */
+  private findBookNote(book: Export): TFile | null {
+    const highlights = this.findHighlightsNote(book);
+    const link = highlights && this.settings.booksBookProperty
+      ? this.app.metadataCache.getFileCache(highlights)?.frontmatter?.[this.settings.booksBookProperty]
+      : null;
+    if (typeof link === 'string') {
+      const target = this.app.metadataCache.getFirstLinkpathDest(link.replace(/^\[\[|\]\]$/g, '').split('|')[0], '');
+      if (target) return target;
+    }
+    if (book.category !== 'books') return null;
+    const folder = normalizePath(this.settings.booksNoteFolder) + '/';
+    const files = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(folder));
+    const match = matchNotes(
+      [{ id: book.user_book_id, title: book.title, author: book.author, status: 'x', started_reading_at: null,
+        finished_reading_at: null, rating: null }],
+      files.map((f) => {
+        const name = /^(.*)\s+\(([^()]+)\)\s*$/.exec(f.basename);
+        return { path: f.path, titles: [name ? name[1] : f.basename], author: name ? name[2] : null, id: null as number | null, isbn: null as string | null };
+      })
+    );
+    const path = match.get(book.user_book_id);
+    const file = path ? this.app.vault.getAbstractFileByPath(path) : null;
+    return file instanceof TFile ? file : null;
+  }
+
+  /** After a library sync: rules over the books that changed. */
+  public async runHighlightRules(library: Library, announce = false): Promise<RulesReport | null> {
+    if (!this.settings.rulesEnabled) {
+      if (announce) this.notify.notice('Readwise: turn on highlight rules in settings first.');
+      return null;
+    }
+    const report = await this.rulesEngine().run(Object.values(library.books));
+    for (const failure of report.failures) this.logger.warn(`Highlight rules: ${failure}`);
+    if (announce || report.written || report.chapterNotes || report.deleted) {
+      const parts = [`${report.written} note(s) created`, `${report.chapterNotes} chapter note(s)`];
+      if (report.deleted) parts.push(`${report.deleted} highlight(s) deleted`);
+      if (report.failures.length) parts.push(`${report.failures.length} failed (see console)`);
+      this.notify.notice(`Readwise rules: ${parts.join(', ')}.`);
+    }
+    return report;
+  }
+
+  public pendingRuleDeletions() {
+    return this.rulesEngine().pending();
+  }
+
+  /** Puts a processed highlight back to "never delete". */
+  public async keepProcessedHighlight(id: string): Promise<void> {
+    const record = this.settings.processedHighlights[id];
+    if (record) {
+      record.state = 'deleted';
+      record.deletedAt = 'kept';
+      await this.saveAndApplySettings();
+    }
+  }
+
+  // ---------------------------------------------------------- Readwise Books
+
+  private booksApi(): BooksApi {
+    return new BooksApi(() => this.settings.apiToken);
+  }
+
+  private lastBookSuggestions: BooksBook[] = [];
+
+  /** Book notes <-> Readwise Books. Runs after each library sync when enabled. */
+  public async syncReadwiseBooks(manual = false): Promise<void> {
+    if (!this.settings.booksEnabled) {
+      if (manual) this.notify.notice('Readwise Books: turn on "Sync book notes with Readwise Books" in settings first.');
+      return;
+    }
+    const report = await syncReadwiseBookNotes(this.ctx, this.booksApi());
+    for (const line of report.log) this.logger.debug(`Readwise Books: ${line}`);
+    if (manual || report.notesUpdated || report.sent || report.created) {
+      const parts = [`${report.notesUpdated} note(s) updated`, `${report.sent} change(s) sent`];
+      if (report.created) parts.push(`${report.created} added to Readwise Books`);
+      if (report.queued) parts.push(`${report.queued} waiting`);
+      this.notify.notice(`Readwise Books: ${parts.join(', ')}.`);
+    }
+    this.lastBookSuggestions = report.suggestions;
+    if (report.suggestions.length === 0) return;
+
+    if (!this.settings.booksSuggestBaselineDone) {
+      // First run: don't flood. Offer to set aside everything that exists now.
+      new ConfirmDialog(this.app, 'Book note suggestions',
+        `${report.suggestions.length} book(s) in Readwise Books have no book note. Stop suggesting these and only `
+        + 'suggest books added or moved from now on? (Cancel to review them now.)',
+        (confirm) => {
+          void (async () => {
+            this.settings.booksSuggestBaselineDone = true;
+            if (confirm) {
+              this.excludeFromSuggestions(report.suggestions);
+              this.lastBookSuggestions = [];
+            }
+            await this.saveAndApplySettings();
+            if (!confirm) this.showBookSuggestions();
+          })();
+        }).open();
+      return;
+    }
+    const fragment = createFragment((f) => {
+      f.appendText(`Readwise Books: ${report.suggestions.length} book(s) could use a book note. `);
+      const link = f.createEl('a', { text: 'Review' });
+      link.addEventListener('click', () => this.showBookSuggestions());
+    });
+    new Notice(fragment, 15000);
+  }
+
+  private excludeFromSuggestions(books: BooksBook[]): void {
+    this.settings.booksSuggestExcluded = [...new Set([...this.settings.booksSuggestExcluded, ...books.map((b) => b.id)])];
+  }
+
+  public showBookSuggestions(): void {
+    new BookSuggestionsModal(this.app, this.lastBookSuggestions, {
+      create: async (book) => {
+        try {
+          const file = await createBookNote(this.ctx, book);
+          return file !== null;
+        } catch (error) {
+          this.logger.error('Readwise Books: note creation failed', error);
+          this.notify.notice(`Readwise Books: could not create the note. ${error}`);
+          return false;
+        }
+      },
+      dismiss: async (book) => {
+        this.excludeFromSuggestions([book]);
+        await this.saveAndApplySettings();
+      },
+      excludeAll: async (books) => {
+        this.excludeFromSuggestions(books);
+        this.lastBookSuggestions = [];
+        await this.saveAndApplySettings();
+      },
+    }).open();
+  }
+
+  /** Command: suggestions from Readwise without running a full sync first. */
+  public async refreshAndShowBookSuggestions(): Promise<void> {
+    if (!this.settings.booksEnabled) {
+      this.notify.notice('Readwise Books: turn on "Sync book notes with Readwise Books" in settings first.');
+      return;
+    }
+    const books = await this.booksApi().listAll();
+    this.lastBookSuggestions = findSuggestions(this.ctx, books);
+    this.showBookSuggestions();
+  }
+
+  public async excludeAllCurrentBooks(): Promise<void> {
+    const books = await this.booksApi().listAll();
+    this.excludeFromSuggestions(books.filter((b) => b.status !== 'deleted'));
+    this.settings.booksSuggestBaselineDone = true;
+    await this.saveAndApplySettings();
+    this.notify.notice(`Readwise Books: ${books.length} current book(s) won't be suggested.`);
+  }
+
+  /** Command: move `consumed` into `format` across book notes. */
+  public async migrateConsumedProperty(): Promise<void> {
+    const folder = normalizePath(this.settings.booksNoteFolder) + '/';
+    const formatName = this.settings.booksPropertyNames.format;
+    let changed = 0;
+    let kept = 0;
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!file.path.startsWith(folder)) continue;
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (!fm || !('consumed' in fm)) continue;
+      const plan = migrateConsumed(fm.consumed, readList(fm[formatName]));
+      await this.app.fileManager.processFrontMatter(file, (front: Record<string, unknown>) => {
+        if (plan.formats.length > readList(front[formatName]).length) front[formatName] = plan.formats;
+        if (plan.removeConsumed) delete front.consumed;
+      });
+      if (plan.removeConsumed) changed++;
+      else kept++;
+    }
+    this.notify.notice(`Readwise Books: moved "consumed" in ${changed} note(s)`
+      + (kept ? `; ${kept} kept it because of a value I didn't recognise.` : '.'));
+  }
+
+  /** Command: add the open book note to Readwise Books. */
+  public async addActiveNoteToBooks(file: TFile): Promise<void> {
+    const fm = (this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}) as Record<string, unknown>;
+    const names = this.settings.booksPropertyNames;
+    const values = readNote(fm, names, this.settings.booksStatusMap);
+    if (values.id) {
+      this.notify.notice('Readwise Books: this note already has a Readwise Books id.');
+      return;
+    }
+    const identity = identityFromFilename(file.basename);
+    const author = authorFromSource(fm.source) ?? identity.author;
+    const product: Record<string, string> = values.isbn ? { isbn: values.isbn }
+      : author ? { title: identity.title, author } : { title: identity.title, author: '' };
+    if (!product.isbn && !product.author) {
+      this.notify.notice('Readwise Books: add an author (source) or ISBN to the note first.');
+      return;
+    }
+    const shelf = values.status ? this.settings.booksStatusMap[values.status] : '';
+    const added = await addNotesToBooks(this.ctx, this.booksApi(),
+      [{ file, item: { product, status: shelf || undefined } }]);
+    this.notify.notice(added ? 'Readwise Books: added.' : 'Readwise Books: could not add this book (see console).');
   }
 
   async deleteLibrary() {

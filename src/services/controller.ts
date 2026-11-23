@@ -138,6 +138,22 @@ export class Controller {
       }
       this.ctx.setStatusBarText(`Readwise: Synced ${humanReadableFormat(this.ctx.settings.lastUpdated)}`);
       if (this.ctx.settings.syncNotifications) this.ctx.notice(`Readwise: Sync complete. ${summarizeSyncReport(report)}`);
+      if (this.ctx.settings.rulesEnabled) {
+        try {
+          await this.plugin.runHighlightRules(library);
+        } catch (rulesError) {
+          this.ctx.logger.error('Highlight rules failed:', rulesError);
+          this.ctx.notice(`Readwise rules: failed. ${rulesError}`);
+        }
+      }
+      if (this.ctx.settings.booksEnabled && !choosingDocuments) {
+        try {
+          await this.plugin.syncReadwiseBooks();
+        } catch (booksError) {
+          this.ctx.logger.error('Readwise Books sync failed:', booksError);
+          this.ctx.notice(`Readwise Books: Sync failed. ${booksError}`);
+        }
+      }
       if (this.ctx.settings.readerEnabled && !choosingDocuments) {
         try {
           const readerReport = await this.plugin.syncReaderDocuments();
@@ -154,6 +170,16 @@ export class Controller {
     } finally {
       this.ctx.syncLock?.release('library-sync');
     }
+  }
+
+  /** Command: run highlight rules over the whole library. */
+  public async runRulesOnFullLibrary(): Promise<void> {
+    if (!(await Controller.validateAPIInstance()) || !this.api) {
+      this.ctx.notice('Readwise: Network connection and valid API Token required');
+      return;
+    }
+    const library = await this.api.downloadFullLibrary();
+    await this.plugin.runHighlightRules(library, true);
   }
 
   public async deleteLibrary() {

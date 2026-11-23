@@ -32,6 +32,7 @@ export interface Highlight {
   readwise_url: string;
   color: string;
   book_id: number;
+  external_id?: string | null; // Reader highlight id for highlights made in Reader
   tags: Tag[];
   is_favorite: boolean;
   is_discard: boolean;

@@ -24,6 +24,7 @@ import { sanitizeFrontmatterTemplate, validateFrontmatterTemplate } from 'utils/
 import { hasAtomizeBlocks } from 'utils/template-utils';
 import type { PluginSettings } from 'types/settings';
 import { parseBookRoutes } from 'services/book-routes';
+import { renderBooksSettings, renderRulesSettings } from 'ui/books-settings';
 
 interface SettingsTab {
   id: string;
@@ -286,6 +287,16 @@ export default class ReadwiseMirrorSettingTab extends PluginSettingTab {
         id: 'book-notes',
         name: 'Book notes',
         render: (container) => this.renderBookNoteSettings(container),
+      },
+      {
+        id: 'readwise-books',
+        name: 'Readwise Books',
+        render: (container) => renderBooksSettings(container, this.ctx, () => this.display()),
+      },
+      {
+        id: 'highlight-rules',
+        name: 'Rules and chapters',
+        render: (container) => renderRulesSettings(container, this.ctx, () => this.display()),
       },
       {
         id: 'frontmatter-template',
